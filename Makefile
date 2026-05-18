@@ -144,13 +144,14 @@ ifeq ($(TARGET_WII_U),1)
 
   include $(DEVKITPPC)/base_tools
 
+  CROSS := powerpc-eabi-
   PORTLIBS := $(PORTLIBS_PATH)/wiiu $(PORTLIBS_PATH)/ppc
   export PATH := $(PORTLIBS_PATH)/wiiu/bin:$(PORTLIBS_PATH)/ppc/bin:$(PATH)
   WUT_ROOT ?= $(DEVKITPRO)/wut
   RPXSPECS := -specs=$(WUT_ROOT)/share/wut.specs
   LIBDIRS := $(PORTLIBS) $(WUT_ROOT)
   LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
-  WIIU_INCLUDES := $(foreach dir,$(LIBDIRS),-I$(dir)/include)
+  WIIU_INCLUDES := $(foreach dir,$(LIBDIRS),$(dir)/include)
 
   WINDOWS_BUILD := 0
   OSX_BUILD := 0
@@ -499,7 +500,7 @@ PYTHON := python3
 ifeq ($(filter clean distclean print-%,$(MAKECMDGOALS)),)
   ifeq ($(WINDOWS_AUTO_BUILDER),0)
     $(info Building tools...)
-    DUMMY != $(MAKE) -C $(TOOLS_DIR) >&2 || echo FAIL
+    DUMMY != $(MAKE) -C $(TOOLS_DIR) CC=gcc CXX=g++ AR=ar RANLIB=ranlib >&2 || echo FAIL
       ifeq ($(DUMMY),FAIL)
         $(error Failed to build tools)
       endif
@@ -586,6 +587,10 @@ ULTRA_C_FILES     := $(foreach dir,$(ULTRA_SRC_DIRS),$(wildcard $(dir)/*.c))
 GODDARD_C_FILES   := $(foreach dir,$(GODDARD_SRC_DIRS),$(wildcard $(dir)/*.c))
 ULTRA_S_FILES     := $(foreach dir,$(ULTRA_SRC_DIRS),$(wildcard $(dir)/*.s))
 GENERATED_C_FILES := $(BUILD_DIR)/assets/mario_anim_data.c $(BUILD_DIR)/assets/demo_data.c
+
+ifeq ($(TARGET_WII_U),1)
+  C_FILES := $(filter-out src/pc/update_checker.c src/pc/network/socket/socket.c src/pc/network/socket/socket_linux.c src/pc/network/socket/socket_windows.c src/pc/mumble/mumble.c,$(C_FILES))
+endif
 
 #ifeq ($(TARGET_N64),0)
 #  GENERATED_C_FILES += $(addprefix $(BUILD_DIR)/bin/,$(addsuffix _skybox.c,$(notdir $(basename $(wildcard textures/skyboxes/*.png)))))
@@ -821,6 +826,7 @@ ifeq ($(WINDOW_API),DXGI)
   BACKEND_LDFLAGS += -ld3dcompiler -ldxgi -ldxguid
   BACKEND_LDFLAGS += -lsetupapi -ldinput8 -luser32 -lgdi32 -limm32 -lole32 -loleaut32 -lshell32 -lwinmm -lversion -luuid -static
 else ifeq ($(WINDOW_API),GX2)
+  BACKEND_CFLAGS += -DHAVE_SDL2=1
   BACKEND_LDFLAGS += -lSDL2 -lwut
 else ifeq ($(findstring SDL,$(WINDOW_API)),SDL)
   ifeq ($(WINDOWS_BUILD),1)
@@ -889,7 +895,7 @@ CC_CHECK := $(CC)
 
 ifeq ($(TARGET_WII_U),1)
   CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DTARGET_WII_U -D__WIIU__ -D__WUT__ -ffunction-sections -ffast-math
-  CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DTARGET_WII_U -D__WIIU__ -D__WUT__ -ffunction-sections -ffast-math
+  CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DTARGET_WII_U -D__WIIU__ -D__WUT__ -DLUA_32BITS -ffunction-sections -ffast-math
 else ifeq ($(WINDOWS_BUILD),1)
   CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DWINSOCK
   CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DWINSOCK
@@ -1019,7 +1025,7 @@ else ifeq ($(TARGET_RPI),1)
 else ifeq ($(TARGET_RK3588),1)
   LDFLAGS += -Llib/lua/linux -l:liblua53-arm64.a
 else ifeq ($(TARGET_WII_U),1)
-  LDFLAGS += -llua
+  LDFLAGS += -Llib/lua/wiiu -l:liblua53.a
 else
   LDFLAGS += -Llib/lua/linux -l:liblua53.a -ldl
 endif
