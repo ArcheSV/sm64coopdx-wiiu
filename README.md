@@ -1,18 +1,25 @@
 ![sm64coopdx Logo](textures/segment2/custom_coopdx_logo.rgba32.png)
 
-sm64coopdx is an online multiplayer project for the Super Mario 64 PC port that synchronizes all entities and every level for multiple players. The project was started by the Coop Deluxe Team. The purpose is to actively maintain and improve, but also continue sm64ex-coop, created by djoslin0. More features, customization, and power to the Lua API allow modders and players to enjoy Super Mario 64 more than ever!
+# SM64 Coop DX Wii U
 
-Feel free to report bugs or contribute to the project. 
+This fork is an experimental Wii U porting effort for [Super Mario 64 Coop DX](https://github.com/coop-deluxe/sm64coopdx).
 
-## Initial Goal (Accomplished)
-Create a mod for the PC port where multiple people can play together online.
+The goal is to explore whether Coop DX can be adapted into a Wii U Homebrew Launcher build, starting with an offline `.rpx` target before attempting any network features. This is being done as a preservation and homebrew learning project.
 
-Unlike previous multiplayer projects, this one synchronizes enemies and events. This allows players to interact with the same world at the same time.
+## Current Status
 
-Interestingly enough though, the goal of the project has slowly evolved over time from simply just making a Super Mario 64 multiplayer mod to constantly maintaining and improving the project (notably the Lua API.)
+This project is still in a very early stage. The first step is importing and adapting Wii U platform code so the project can eventually build with devkitPro, devkitPPC, and wut.
 
-## Lua
-sm64coopdx is moddable via Lua, similar to Roblox and Garry's Mod's Lua APIs. To get started, click [here](docs/lua/lua.md) to see the Lua documentation.
+At this point, the Wii U target should not be considered playable or complete lol
 
-## Wiki
-The wiki is made using GitHub's wiki feature, you can go to the wiki tab or click [here](https://github.com/coop-deluxe/sm64coopdx/wiki).
+## Credits
+
+- [Super Mario 64 Coop DX](https://github.com/coop-deluxe/sm64coopdx), created and maintained by the Coop Deluxe Team.
+- [sm64ex-coop](https://github.com/djoslin0/sm64ex-coop), the earlier project that Coop DX continues and expands on.
+- [sm64-port by aboood40091](https://github.com/aboood40091/sm64-port), used as the main reference for Wii U platform files, GX2 rendering, Wii U shaders, and controller support.
+- [devkitPro](https://devkitpro.org/) and the Wii U homebrew toolchain.
+
+## Legal Notice
+
+This repository does not include ROMs, extracted game assets, or generated files derived from Nintendo content. Building this project requires users to provide their own legally obtained Super Mario 64 ROM.
+
