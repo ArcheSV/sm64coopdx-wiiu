@@ -10,6 +10,7 @@
 #include <padscore/kpad.h>
 
 #include "controller_api.h"
+#include "controller_wiiu.h"
 #include "../configfile.h"
 
 struct WiiUKeymap {
@@ -184,9 +185,19 @@ static void controller_wiiu_read(OSContPad* pad) {
     read_wpad(pad);
 }
 
+static u32 controller_wiiu_rawkey(void) {
+    return VK_INVALID;
+}
+
 struct ControllerAPI controller_wiiu = {
+    VK_BASE_WIIU_GAMEPAD,
     controller_wiiu_init,
-    controller_wiiu_read
+    controller_wiiu_read,
+    controller_wiiu_rawkey,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 #endif

@@ -6,6 +6,7 @@
 #include <coreinit/memdefaultheap.h>
 #include <coreinit/memfrmheap.h>
 #include <coreinit/memheap.h>
+#include <coreinit/time.h>
 #include <gx2/clear.h>
 #include <gx2/context.h>
 #include <gx2/display.h>
@@ -321,7 +322,7 @@ static bool gfx_gx2_window_foreground_acquire_callback(void)
     return true;
 }
 
-static void gfx_gx2_window_init(UNUSED const char*, UNUSED bool)
+static void gfx_gx2_window_init(UNUSED const char*)
 {
     WHBLogCafeInit();
     WHBLogUdpInit();
@@ -383,15 +384,16 @@ static void gfx_gx2_window_init(UNUSED const char*, UNUSED bool)
     is_running = true;
 }
 
-static void gfx_gx2_window_set_keyboard_callbacks(UNUSED bool (*)(int), UNUSED bool (*)(int), UNUSED void (*)(void))
+static void gfx_gx2_window_set_keyboard_callbacks(UNUSED kb_callback_t, UNUSED kb_callback_t, UNUSED void (*)(void),
+                                                  UNUSED void (*)(char*), UNUSED void (*)(char*, int))
 {
 }
 
-static void gfx_gx2_window_set_fullscreen_changed_callback(UNUSED void (*)(bool))
+static void gfx_gx2_window_set_scroll_callback(UNUSED void (*)(float, float))
 {
 }
 
-static void gfx_gx2_window_set_fullscreen(UNUSED bool)
+static void gfx_gx2_window_shutdown(void)
 {
 }
 
@@ -510,18 +512,73 @@ static double gfx_gx2_window_get_time(void)
     return 0.0;
 }
 
+static void gfx_gx2_window_start_text_input(void)
+{
+}
+
+static void gfx_gx2_window_stop_text_input(void)
+{
+}
+
+static char* gfx_gx2_window_get_clipboard_text(void)
+{
+    static char clipboard[1] = { 0 };
+    return clipboard;
+}
+
+static void gfx_gx2_window_set_clipboard_text(UNUSED const char*)
+{
+}
+
+static void gfx_gx2_window_set_cursor_visible(UNUSED bool)
+{
+}
+
+static void gfx_gx2_window_delay(unsigned int ms)
+{
+    OSSleepTicks(OSMillisecondsToTicks(ms));
+}
+
+static int gfx_gx2_window_get_max_msaa(void)
+{
+    return 0;
+}
+
+static void gfx_gx2_window_set_window_title(UNUSED const char*)
+{
+}
+
+static void gfx_gx2_window_reset_window_title(void)
+{
+}
+
+static bool gfx_gx2_window_has_focus(void)
+{
+    return true;
+}
+
 struct GfxWindowManagerAPI gfx_gx2_window = {
     gfx_gx2_window_init,
     gfx_gx2_window_set_keyboard_callbacks,
-    gfx_gx2_window_set_fullscreen_changed_callback,
-    gfx_gx2_window_set_fullscreen,
+    gfx_gx2_window_set_scroll_callback,
     gfx_gx2_window_main_loop,
     gfx_gx2_window_get_dimensions,
     gfx_gx2_window_handle_events,
     gfx_gx2_window_start_frame,
     gfx_gx2_window_swap_buffers_begin,
     gfx_gx2_window_swap_buffers_end,
-    gfx_gx2_window_get_time
+    gfx_gx2_window_get_time,
+    gfx_gx2_window_shutdown,
+    gfx_gx2_window_start_text_input,
+    gfx_gx2_window_stop_text_input,
+    gfx_gx2_window_get_clipboard_text,
+    gfx_gx2_window_set_clipboard_text,
+    gfx_gx2_window_set_cursor_visible,
+    gfx_gx2_window_delay,
+    gfx_gx2_window_get_max_msaa,
+    gfx_gx2_window_set_window_title,
+    gfx_gx2_window_reset_window_title,
+    gfx_gx2_window_has_focus
 };
 
 #endif

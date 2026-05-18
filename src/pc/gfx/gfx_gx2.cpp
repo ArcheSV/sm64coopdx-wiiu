@@ -32,7 +32,7 @@
 
 struct ShaderProgram
 {
-    uint32_t shader_id;
+    uint64_t hash;
     union
     {
         WHBGfxShaderGroup whb_group;
@@ -149,10 +149,11 @@ static void gfx_gx2_load_shader(struct ShaderProgram* new_prg)
     gfx_gx2_set_uniforms(new_prg);
 }
 
-static struct ShaderProgram* gfx_gx2_create_and_load_new_shader(uint32_t shader_id)
+static struct ShaderProgram* gfx_gx2_create_and_load_new_shader(struct ColorCombiner* cc)
 {
-    struct CCFeatures cc_features;
-    gfx_cc_get_features(shader_id, &cc_features);
+    struct CCFeatures cc_features = {};
+    gfx_cc_get_features(cc, &cc_features);
+    uint32_t shader_id = (uint32_t)cc->hash;
 
     struct ShaderProgram* prg = &shader_program_pool[shader_program_pool_size++];
     prg->is_precompiled = true;
@@ -263,7 +264,7 @@ error_attr:
         prg->num_floats = prg->gen_group.numAttributes * 4;
     }
 
-    prg->shader_id = shader_id;
+    prg->hash = cc->hash;
     prg->num_inputs = cc_features.num_inputs;
     prg->used_textures[0] = cc_features.used_textures[0];
     prg->used_textures[1] = cc_features.used_textures[1];
@@ -285,10 +286,10 @@ error_attr:
     return prg;
 }
 
-static struct ShaderProgram* gfx_gx2_lookup_shader(uint32_t shader_id)
+static struct ShaderProgram* gfx_gx2_lookup_shader(struct ColorCombiner* cc)
 {
     for (size_t i = 0; i < shader_program_pool_size; i++)
-        if (shader_program_pool[i].shader_id == shader_id)
+        if (shader_program_pool[i].hash == cc->hash)
             return &shader_program_pool[i];
 
     return nullptr;
@@ -561,6 +562,12 @@ extern "C" void gfx_gx2_free(void)
     shader_program_pool_size = 0;
 }
 
+static void gfx_gx2_shutdown(void)
+{
+    gfx_gx2_free_vbo();
+    gfx_gx2_free();
+}
+
 struct GfxRenderingAPI gfx_gx2_api = {
     gfx_gx2_z_is_from_0_to_1,
     gfx_gx2_unload_shader,
@@ -583,7 +590,8 @@ struct GfxRenderingAPI gfx_gx2_api = {
     gfx_gx2_on_resize,
     gfx_gx2_start_frame,
     gfx_gx2_end_frame,
-    gfx_gx2_finish_render
+    gfx_gx2_finish_render,
+    gfx_gx2_shutdown
 };
 
 #endif

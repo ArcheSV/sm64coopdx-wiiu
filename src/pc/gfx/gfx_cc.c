@@ -32,6 +32,16 @@ void gfx_cc_get_features(struct ColorCombiner* cc, struct CCFeatures* ccf) {
         ccf->do_noise = ccf->do_noise || c == SHADER_NOISE;
     }
 
+    ccf->opt_alpha = cc->cm.use_alpha;
+    ccf->opt_fog = cc->cm.use_fog;
+    ccf->opt_texture_edge = cc->cm.texture_edge;
+    ccf->opt_noise = ccf->do_noise;
+
+    for (int i = 0; i < 4; i++) {
+        ccf->c[0][i] = cc->shader_commands[i];
+        ccf->c[1][i] = cc->shader_commands[i + 4];
+    }
+
     // figure out optimizations
     for (int i = 0; i < 16 / 4; i++) {
         u8* c = &cc->shader_commands[i * 4];
