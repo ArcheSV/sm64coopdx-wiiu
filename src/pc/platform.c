@@ -296,7 +296,7 @@ static void sys_fatal_impl(const char *msg) {
 
 #include <whb/sdcard.h>
 
-#define WIIU_APP_DIR "/wiiu/apps/s3m64coopdxu"
+#define WIIU_APP_DIR "/wiiu/apps/sm64coopdxu"
 
 static const char *sys_wiiu_app_path(void) {
     static char path[SYS_MAX_PATH] = { 0 };
