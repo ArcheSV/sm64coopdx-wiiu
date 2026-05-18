@@ -1,6 +1,12 @@
 #ifndef SMLUA_AUDIO_UTILS_H
 #define SMLUA_AUDIO_UTILS_H
 
+#ifdef TARGET_WII_U
+#define MA_NO_RUNTIME_LINKING
+#define MA_NO_DEVICE_IO
+#define MA_NO_THREADING
+#endif
+
 #include "pc/utils/miniaudio.h"
 
 /* |description|Resets all custom sequences back to vanilla|descriptionEnd| */

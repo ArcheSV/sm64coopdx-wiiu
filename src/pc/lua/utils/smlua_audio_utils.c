@@ -1,8 +1,10 @@
+#ifndef TARGET_WII_U
 #define MINIAUDIO_IMPLEMENTATION // required by miniaudio
 
 // enable Vorbis decoding (provides ogg audio decoding support) for miniaudio
 #define STB_VORBIS_HEADER_ONLY
 #include "pc/utils/stb_vorbis.c"
+#endif
 
 #include "types.h"
 #include "seq_ids.h"
@@ -173,6 +175,110 @@ void smlua_audio_utils_replace_sequence(u8 sequenceId, u8 bankId, u8 defaultVolu
   ///////////////
  // mod audio //
 ///////////////
+
+#ifdef TARGET_WII_U
+
+struct ModAudio* audio_stream_load(const char* filename) {
+    (void)filename;
+    return NULL;
+}
+
+void audio_stream_destroy(struct ModAudio* audio) {
+    (void)audio;
+}
+
+void audio_stream_play(struct ModAudio* audio, bool restart, f32 volume) {
+    (void)audio;
+    (void)restart;
+    (void)volume;
+}
+
+void audio_stream_pause(struct ModAudio* audio) {
+    (void)audio;
+}
+
+void audio_stream_stop(struct ModAudio* audio) {
+    (void)audio;
+}
+
+f32 audio_stream_get_position(struct ModAudio* audio) {
+    (void)audio;
+    return 0;
+}
+
+void audio_stream_set_position(struct ModAudio* audio, f32 pos) {
+    (void)audio;
+    (void)pos;
+}
+
+bool audio_stream_get_looping(struct ModAudio* audio) {
+    (void)audio;
+    return false;
+}
+
+void audio_stream_set_looping(struct ModAudio* audio, bool looping) {
+    (void)audio;
+    (void)looping;
+}
+
+void audio_stream_set_loop_points(struct ModAudio* audio, s64 loopStart, s64 loopEnd) {
+    (void)audio;
+    (void)loopStart;
+    (void)loopEnd;
+}
+
+f32 audio_stream_get_frequency(struct ModAudio* audio) {
+    (void)audio;
+    return 0;
+}
+
+void audio_stream_set_frequency(struct ModAudio* audio, f32 freq) {
+    (void)audio;
+    (void)freq;
+}
+
+f32 audio_stream_get_volume(struct ModAudio* audio) {
+    (void)audio;
+    return 0;
+}
+
+void audio_stream_set_volume(struct ModAudio* audio, f32 volume) {
+    (void)audio;
+    (void)volume;
+}
+
+void audio_sample_destroy_pending_copies(void) {
+}
+
+struct ModAudio* audio_sample_load(const char* filename) {
+    (void)filename;
+    return NULL;
+}
+
+void audio_sample_destroy(struct ModAudio* audio) {
+    (void)audio;
+}
+
+void audio_sample_stop(struct ModAudio* audio) {
+    (void)audio;
+}
+
+void audio_sample_play(struct ModAudio* audio, Vec3f position, f32 volume) {
+    (void)audio;
+    (void)position;
+    (void)volume;
+}
+
+void audio_custom_update_volume(void) {
+}
+
+void audio_custom_shutdown(void) {
+}
+
+void smlua_audio_custom_deinit(void) {
+}
+
+#else
 
 // Optimization: disable spatialization for everything as it's not used
 #define MA_SOUND_STREAM_FLAGS (MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_STREAM)
@@ -662,3 +768,5 @@ void smlua_audio_custom_deinit(void) {
         sModAudioPool = NULL;
     }
 }
+
+#endif
