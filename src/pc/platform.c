@@ -292,6 +292,54 @@ static void sys_fatal_impl(const char *msg) {
     exit(1);
 }
 
+#elif defined(TARGET_WII_U)
+
+#include <whb/sdcard.h>
+
+#define WIIU_APP_DIR "/wiiu/apps/s3m64coopdxu"
+
+static const char *sys_wiiu_app_path(void) {
+    static char path[SYS_MAX_PATH] = { 0 };
+    if ('\0' != path[0]) { return path; }
+
+    if (!WHBMountSdCard()) { return NULL; }
+
+    const char *sdPath = WHBGetSdCardMountPath();
+    if (NULL == sdPath) { return NULL; }
+
+    snprintf(path, SYS_MAX_PATH, "%s%s", sdPath, WIIU_APP_DIR);
+    return path;
+}
+
+const char *sys_user_path(void) {
+    return sys_wiiu_app_path();
+}
+
+const char *sys_resource_path(void) {
+    return sys_wiiu_app_path();
+}
+
+const char *sys_exe_path_dir(void) {
+    return sys_wiiu_app_path();
+}
+
+const char *sys_exe_path_file(void) {
+    static char path[SYS_MAX_PATH] = { 0 };
+    if ('\0' != path[0]) { return path; }
+
+    const char *appPath = sys_wiiu_app_path();
+    if (NULL == appPath) { return NULL; }
+
+    snprintf(path, SYS_MAX_PATH, "%s/sm64coopdxu.rpx", appPath);
+    return path;
+}
+
+static void sys_fatal_impl(const char *msg) {
+    fprintf(stderr, "FATAL ERROR:\n%s\n", msg);
+    fflush(stderr);
+    exit(1);
+}
+
 #elif defined(HAVE_SDL2)
 
 // we can just ask SDL for most of this shit if we have it
