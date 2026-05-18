@@ -16,7 +16,11 @@ typedef struct OSTimer_str
     OSMesg *msg;
 } OSTimer;
 
+#ifdef TARGET_WII_U
+typedef s64 OSTime;
+#else
 typedef u64 OSTime;
+#endif
 
 /* Functions */
 

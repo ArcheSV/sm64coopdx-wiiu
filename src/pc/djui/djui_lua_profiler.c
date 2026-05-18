@@ -5,6 +5,10 @@
 #include "pc/mods/mod.h"
 #include "pc/mods/mods.h"
 
+#ifdef TARGET_WII_U
+#include <SDL2/SDL.h>
+#endif
+
 #define MAX_PROFILED_MODS 16
 #define REFRESH_RATE 30
 

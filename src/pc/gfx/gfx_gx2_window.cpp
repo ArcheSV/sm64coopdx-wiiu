@@ -7,6 +7,7 @@
 #include <coreinit/memfrmheap.h>
 #include <coreinit/memheap.h>
 #include <coreinit/time.h>
+#include <coreinit/thread.h>
 #include <gx2/clear.h>
 #include <gx2/context.h>
 #include <gx2/display.h>
