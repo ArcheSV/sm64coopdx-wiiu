@@ -31,6 +31,9 @@ TARGET_RPI ?= 0
 # Build and optimize for RK3588 processor
 TARGET_RK3588 ?= 0
 
+# Build for Wii U using devkitPro/wut
+TARGET_WII_U ?= 0
+
 # Makeflag to enable OSX fixes
 OSX_BUILD ?= 0
 
@@ -79,13 +82,13 @@ NO_LDIV ?= 0
 
 # Backend selection
 
-# Renderers: GL, GL_LEGACY, D3D11, DUMMY
+# Renderers: GL, GL_LEGACY, D3D11, GX2, DUMMY
 RENDER_API ?= GL
-# Window managers: SDL1, SDL2, DXGI (forced if RENDER_API is D3D11), DUMMY (forced if RENDER_API is DUMMY)
+# Window managers: SDL1, SDL2, DXGI (forced if RENDER_API is D3D11), GX2, DUMMY (forced if RENDER_API is DUMMY)
 WINDOW_API ?= SDL2
 # Audio backends: SDL1, SDL2, DUMMY
 AUDIO_API ?= SDL2
-# Controller backends (can have multiple, space separated): SDL2, SDL1
+# Controller backends (can have multiple, space separated): SDL2, SDL1, WIIU
 CONTROLLER_API ?= SDL2
 
 # Automatic settings for PC port(s)
@@ -128,6 +131,35 @@ ifeq ($(HOST_OS),Darwin)
   ifndef BREW_PREFIX
     BREW_PREFIX := $(shell brew --prefix)
   endif
+endif
+
+ifeq ($(TARGET_WII_U),1)
+  $(info Compiling for Wii U)
+  ifeq ($(strip $(DEVKITPRO)),)
+    $(error "Please set DEVKITPRO in your environment")
+  endif
+  ifeq ($(strip $(DEVKITPPC)),)
+    $(error "Please set DEVKITPPC in your environment")
+  endif
+
+  include $(DEVKITPPC)/base_tools
+
+  PORTLIBS := $(PORTLIBS_PATH)/wiiu $(PORTLIBS_PATH)/ppc
+  export PATH := $(PORTLIBS_PATH)/wiiu/bin:$(PORTLIBS_PATH)/ppc/bin:$(PATH)
+  WUT_ROOT ?= $(DEVKITPRO)/wut
+  RPXSPECS := -specs=$(WUT_ROOT)/share/wut.specs
+  LIBDIRS := $(PORTLIBS) $(WUT_ROOT)
+  LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+  WIIU_INCLUDES := $(foreach dir,$(LIBDIRS),-I$(dir)/include)
+
+  WINDOWS_BUILD := 0
+  OSX_BUILD := 0
+  DISCORD_SDK := 0
+  COOPNET := 0
+  RENDER_API := GX2
+  WINDOW_API := GX2
+  AUDIO_API := DUMMY
+  CONTROLLER_API := WIIU
 endif
 
 ifeq ($(HOST_OS),Linux)
@@ -329,6 +361,10 @@ ifeq ($(TARGET_RK3588),1)
   OPT_FLAGS := -march=armv8.2-a+crc+simd -mtune=cortex-a76 -O3
 endif
 
+ifeq ($(TARGET_WII_U),1)
+  OPT_FLAGS := -O2
+endif
+
 # Set BITS (32/64) to compile for
 OPT_FLAGS += $(BITS)
 
@@ -488,7 +524,9 @@ BUILD_DIR_BASE := build
 # BUILD_DIR is the location where all build artifacts are placed
 BUILD_DIR := $(BUILD_DIR_BASE)/$(VERSION)_pc
 
-ifeq ($(WINDOWS_BUILD),1)
+ifeq ($(TARGET_WII_U),1)
+	EXE := $(BUILD_DIR)/sm64coopdx.rpx
+else ifeq ($(WINDOWS_BUILD),1)
 	EXE := $(BUILD_DIR)/sm64coopdx.exe
 else # Linux builds/binary namer
 	ifeq ($(TARGET_RPI),1)
@@ -517,6 +555,10 @@ BIN_DIRS := bin bin/$(VERSION)
 
 # PC files
 SRC_DIRS += src/pc src/pc/gfx src/pc/audio src/pc/controller src/pc/fs src/pc/fs/packtypes src/pc/mods src/pc/dev src/pc/network src/pc/network/packets src/pc/network/socket src/pc/network/coopnet src/pc/utils src/pc/utils/miniz src/pc/djui src/pc/lua src/pc/lua/utils src/pc/os
+
+ifeq ($(TARGET_WII_U),1)
+  SRC_DIRS += src/pc/gfx/shaders_wiiu
+endif
 
 ifeq ($(DISCORD_SDK),1)
   SRC_DIRS += src/pc/discord
@@ -757,6 +799,10 @@ else
   INCLUDE_DIRS += sound lib/lua/include lib/coopnet/include $(EXTRA_INCLUDES)
 endif
 
+ifeq ($(TARGET_WII_U),1)
+  INCLUDE_DIRS += $(WIIU_INCLUDES)
+endif
+
 # Connfigure backend flags
 
 SDLCONFIG := $(CROSS)sdl2-config
@@ -774,6 +820,8 @@ ifeq ($(WINDOW_API),DXGI)
   DXBITS := `cat $(ENDIAN_BITWIDTH) | tr ' ' '\n' | tail -1`
   BACKEND_LDFLAGS += -ld3dcompiler -ldxgi -ldxguid
   BACKEND_LDFLAGS += -lsetupapi -ldinput8 -luser32 -lgdi32 -limm32 -lole32 -loleaut32 -lshell32 -lwinmm -lversion -luuid -static
+else ifeq ($(WINDOW_API),GX2)
+  BACKEND_LDFLAGS += -lSDL2 -lwut
 else ifeq ($(findstring SDL,$(WINDOW_API)),SDL)
   ifeq ($(WINDOWS_BUILD),1)
     BACKEND_LDFLAGS += -lglew32 -lglu32 -lopengl32
@@ -839,7 +887,10 @@ DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES)
 # Check code syntax with host compiler
 CC_CHECK := $(CC)
 
-ifeq ($(WINDOWS_BUILD),1)
+ifeq ($(TARGET_WII_U),1)
+  CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DTARGET_WII_U -D__WIIU__ -D__WUT__ -ffunction-sections -ffast-math
+  CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DTARGET_WII_U -D__WIIU__ -D__WUT__ -ffunction-sections -ffast-math
+else ifeq ($(WINDOWS_BUILD),1)
   CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DWINSOCK
   CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DWINSOCK
 
@@ -880,7 +931,9 @@ ifeq ($(TARGET_N64),1)
   endif
 endif
 
-ifeq ($(WINDOWS_BUILD),1)
+ifeq ($(TARGET_WII_U),1)
+  LDFLAGS := $(OPT_FLAGS) -lm -no-pie -g $(MACHDEP) $(RPXSPECS) $(LIBPATHS) $(BACKEND_LDFLAGS)
+else ifeq ($(WINDOWS_BUILD),1)
   LDFLAGS := $(BITS) -march=$(TARGET_ARCH) -Llib -lpthread $(BACKEND_LDFLAGS) -static -mconsole
   ifeq ($(CROSS),)
     LDFLAGS += -no-pie
@@ -897,8 +950,10 @@ else
 endif
 
 # used by crash handler and loading screen on linux
+ifeq ($(TARGET_WII_U),0)
 ifeq ($(WINDOWS_BUILD),0)
   LDFLAGS += -rdynamic -ldl -pthread
+endif
 endif
 
 # icon
@@ -934,10 +989,12 @@ endif
 LDFLAGS += -lz
 
 # Update checker library
+ifeq ($(TARGET_WII_U),0)
 ifeq ($(WINDOWS_BUILD),1)
   LDFLAGS += -lwininet
 else
   LDFLAGS += -lcurl
+endif
 endif
 
 # Lua
@@ -961,6 +1018,8 @@ else ifeq ($(TARGET_RPI),1)
   endif
 else ifeq ($(TARGET_RK3588),1)
   LDFLAGS += -Llib/lua/linux -l:liblua53-arm64.a
+else ifeq ($(TARGET_WII_U),1)
+  LDFLAGS += -llua
 else
   LDFLAGS += -Llib/lua/linux -l:liblua53.a -ldl
 endif
@@ -1029,8 +1088,10 @@ CFLAGS += -fPIE
 # Prevent a crash with -sopt
 export LANG := C
 
+ifeq ($(TARGET_WII_U),0)
 ifeq ($(OSX_BUILD),0)
   LDFLAGS += -latomic
+endif
 endif
 
 #==============================================================================#
@@ -1085,6 +1146,11 @@ endif
 ifeq ($(TARGET_RK3588),1)
   CC_CHECK_CFLAGS += -DTARGET_RK3588
   CFLAGS += -DTARGET_RK3588
+endif
+
+ifeq ($(TARGET_WII_U),1)
+  CC_CHECK_CFLAGS += -DTARGET_WII_U
+  CFLAGS += -DTARGET_WII_U
 endif
 
 # Check for texture fix option

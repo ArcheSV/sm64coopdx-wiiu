@@ -9,6 +9,7 @@ extern "C" {
 
 #include "gfx/gfx_opengl.h"
 #include "gfx/gfx_direct3d11.h"
+#include "gfx/gfx_gx2.h"
 
 #include "gfx/gfx_dxgi.h"
 #include "gfx/gfx_sdl.h"
@@ -18,6 +19,8 @@ extern "C" {
 # define WAPI gfx_sdl
 #elif defined(WAPI_DXGI)
 # define WAPI gfx_dxgi
+#elif defined(WAPI_GX2)
+# define WAPI gfx_gx2_window
 #elif defined(WAPI_DUMMY)
 # define WAPI gfx_dummy_wm_api
 #else
@@ -34,6 +37,9 @@ extern "C" {
 # else
 #  define RAPI_NAME "OpenGL"
 # endif
+#elif defined(RAPI_GX2)
+# define RAPI gfx_gx2_api
+# define RAPI_NAME "GX2"
 #elif defined(RAPI_DUMMY)
 # define RAPI gfx_dummy_renderer_api
 # define RAPI_NAME "Dummy"
