@@ -94,9 +94,19 @@ void legacy_folder_handler(void) {
 }
 
 bool main_rom_handler(void) {
+#ifdef TARGET_WII_U
+    std::string writePath = fs_get_write_path("") + std::string("baserom.us.z64");
+    if (is_rom_valid(writePath)) { return true; }
+
+    std::string exePath = std::string(sys_exe_path_dir()) + "/baserom.us.z64";
+    if (is_rom_valid(exePath)) { return true; }
+
+    return gRomIsValid;
+#else
     if (scan_path_for_rom(fs_get_write_path(""))) { return true; }
     scan_path_for_rom(sys_exe_path_dir());
     return gRomIsValid;
+#endif
 }
 
 #ifdef LOADING_SCREEN_SUPPORTED
