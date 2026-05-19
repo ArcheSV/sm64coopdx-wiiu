@@ -1173,6 +1173,11 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
             }
             buf_vbo[buf_vbo_len++] = u / tex_width;
             buf_vbo[buf_vbo_len++] = v / tex_height;
+#ifdef TARGET_WII_U
+            // Padding for faster GPU reading.
+            buf_vbo[buf_vbo_len++] = 0.0f;
+            buf_vbo[buf_vbo_len++] = 0.0f;
+#endif
         }
 
         if (cm->use_fog) {
@@ -1185,11 +1190,13 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
             buf_vbo[buf_vbo_len++] = v_arr[i]->fog_z / 255.0f; // fog factor (not alpha)
         }
 
+#ifndef TARGET_WII_U
         if (cm->light_map) {
             struct RGBA* col = &v_arr[i]->color;
             buf_vbo[buf_vbo_len++] = ( (((uint16_t)col->g) << 8) | ((uint16_t)col->r) ) / 65535.0f;
             buf_vbo[buf_vbo_len++] = 1.0f - (( (((uint16_t)col->a) << 8) | ((uint16_t)col->b) ) / 65535.0f);
         }
+#endif
 
         for (int j = 0; j < num_inputs; j++) {
             struct RGBA *color = NULL;
@@ -1237,6 +1244,11 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
                     buf_vbo[buf_vbo_len++] = color->r / 255.0f;
                     buf_vbo[buf_vbo_len++] = color->g / 255.0f;
                     buf_vbo[buf_vbo_len++] = color->b / 255.0f;
+#ifdef TARGET_WII_U
+                    if (!cm->use_alpha) {
+                        buf_vbo[buf_vbo_len++] = 1.0f;
+                    }
+#endif
                 } else {
                     if (cm->use_fog && (color == &v_arr[i]->color || cm->light_map)) {
                         // Shade alpha is 100% for fog
