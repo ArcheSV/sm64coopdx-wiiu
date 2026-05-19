@@ -26,11 +26,19 @@ static u32 sCurrentPhysicalSize = 0;
 static u8* sCurrentSegmentMemory = NULL;
 static u32 sCurrentSegmentSize = 0;
 
+static u16 read_be16(const u8 *ptr) {
+    return ((u16)ptr[0] << 8) | ptr[1];
+}
+
+static u32 read_be32(const u8 *ptr) {
+    return ((u32)ptr[0] << 24) | ((u32)ptr[1] << 16) | ((u32)ptr[2] << 8) | ptr[3];
+}
+
 static s16 READ16(struct RomAsset* asset) {
     s64 index = (asset->segmentedAddress + asset->cursor);
-    if (index < 0 || index >= sCurrentSegmentSize) { return 0; }
+    if (index < 0 || index + 1 >= sCurrentSegmentSize) { return 0; }
     u8* ptr = &sCurrentSegmentMemory[index];
-    s16 value = BSWAP16(*((s16*)ptr));
+    s16 value = (s16)read_be16(ptr);
     asset->cursor += sizeof(s16);
     return value;
 }
@@ -203,27 +211,26 @@ void rom_assets_queue(void* ptr, enum RomAssetType assetType, u32 physicalAddres
 }
 
 u8* rom_assets_decompress(u32* data, u32* decompressedSize) {
-    if (BSWAP32(data[0]) != 0x4d494f30) {
+    u8 *bytes = (u8 *)data;
+    if (read_be32(bytes) != 0x4d494f30) {
         return NULL;
     }
 
     // ripped from tools/gen_asset_list.cpp
-    uint32_t* src = data;
-    uint32_t size = BSWAP32(src[1]);
+    u8 *src = bytes + 16;
+    uint32_t size = read_be32(bytes + 4);
     u8* output = calloc(size, 1);
     char *dest = (char *)output;
     char *destEnd = (size + dest);
-    uint16_t *cmpOffset = (uint16_t *)((char *)src + BSWAP32(src[2]));
-    char *rawOffset = ((char *)src + BSWAP32(src[3]));
+    u8 *cmpOffset = bytes + read_be32(bytes + 8);
+    char *rawOffset = (char *)(bytes + read_be32(bytes + 12));
     int counter = 0;
     uint32_t controlBits;
 
-    src += 4;
-
     while (dest != destEnd) {
         if (counter == 0) {
-            controlBits = *src++;
-            controlBits = BSWAP32(controlBits);
+            controlBits = read_be32(src);
+            src += 4;
             counter = 32;
         }
 
@@ -231,8 +238,8 @@ u8* rom_assets_decompress(u32* data, u32* decompressedSize) {
             *dest++ = *rawOffset++;
         }
         else {
-            uint16_t dcmpParam = *cmpOffset++;
-            dcmpParam = BSWAP16(dcmpParam);
+            uint16_t dcmpParam = read_be16(cmpOffset);
+            cmpOffset += 2;
             int dcmpCount = (dcmpParam >> 12) + 3;
             char* dcmpPtr = dest - (dcmpParam & 0x0FFF);
 
