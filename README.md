@@ -8,9 +8,11 @@ The goal is to explore whether Coop DX can be adapted into a Wii U Homebrew Laun
 
 ## Current Status
 
-This project is still in a very early stage. The first step is importing and adapting Wii U platform code so the project can eventually build with devkitPro, devkitPPC, and wut.
+This Wii U port is in an early experimental stage.
 
-At this point, the Wii U target should not be considered playable or complete lol
+The project now builds with the Wii U toolchain and can produce a testable RPX. In Cemu, startup has progressed past filesystem setup, ROM lookup, and part of the asset loading flow, reaching the early loading/UI path. The port is not playable yet and still crashes during later initialization, currently around audio/runtime compatibility work.
+
+The build and packaging flow is still provisional, and some diagnostics are being used while the port is being stabilized.
 
 ## Credits
 
