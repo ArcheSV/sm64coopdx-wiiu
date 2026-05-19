@@ -1436,6 +1436,25 @@ $(ENDIAN_BITWIDTH): $(TOOLS_DIR)/determine-endian-bitwidth.c
 	@$(RM) $@.dummy1
 	@$(RM) $@.dummy2
 
+ifeq ($(TARGET_WII_U),1)
+$(SOUND_BIN_DIR)/sound_data.tbl: sound/sound_data_compressed.tbl
+	@$(PRINT) "$(GREEN)Converting endian:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/sound_data_compressed.tbl $@.little
+	$(V)$(PYTHON) $(TOOLS_DIR)/convert_sound_endian.py seqfile $@.little $@ --from little --to big --from-bitwidth 64 --to-bitwidth 32
+	@$(RM) $@.little
+
+$(SOUND_BIN_DIR)/sound_data.ctl: sound/sound_data_compressed.ctl
+	@$(PRINT) "$(GREEN)Converting endian:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/sound_data_compressed.ctl $@.little
+	$(V)$(PYTHON) $(TOOLS_DIR)/convert_sound_endian.py ctl $@.little $@ --from little --to big --from-bitwidth 64 --to-bitwidth 32
+	@$(RM) $@.little
+
+$(SOUND_BIN_DIR)/bank_sets: sound/bank_sets_compressed $(SOUND_BIN_DIR)/sequences.bin
+	@$(PRINT) "$(GREEN)Converting endian:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/bank_sets_compressed $@.little
+	$(V)$(PYTHON) $(TOOLS_DIR)/convert_sound_endian.py banksets $@.little $@ --from little --to big --from-bitwidth 64 --to-bitwidth 32 --count-from-seqfile $(SOUND_BIN_DIR)/sequences.bin --seqfile-endian big
+	@$(RM) $@.little
+else
 $(SOUND_BIN_DIR)/sound_data.tbl: sound/sound_data_compressed.tbl
 	@$(PRINT) "$(GREEN)Decompressing:  $(BLUE)$@ $(NO_COL)\n"
 	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/sound_data_compressed.tbl $(SOUND_BIN_DIR)/sound_data.tbl
@@ -1447,6 +1466,7 @@ $(SOUND_BIN_DIR)/sound_data.ctl: sound/sound_data_compressed.ctl
 $(SOUND_BIN_DIR)/bank_sets: sound/bank_sets_compressed
 	@$(PRINT) "$(GREEN)Decompressing:  $(BLUE)$@ $(NO_COL)\n"
 	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/bank_sets_compressed $(SOUND_BIN_DIR)/bank_sets
+endif
 
 $(SOUND_BIN_DIR)/ctl_header: $(SOUND_BIN_DIR)/sound_data.ctl
 	@true
@@ -1454,9 +1474,17 @@ $(SOUND_BIN_DIR)/ctl_header: $(SOUND_BIN_DIR)/sound_data.ctl
 $(SOUND_BIN_DIR)/tbl_header: $(SOUND_BIN_DIR)/sound_data.ctl
 	@true
 
+ifeq ($(TARGET_WII_U),1)
+$(SOUND_BIN_DIR)/sequences.bin: sound/sequences_compressed.bin
+	@$(PRINT) "$(GREEN)Converting endian:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/sequences_compressed.bin $@.little
+	$(V)$(PYTHON) $(TOOLS_DIR)/convert_sound_endian.py seqfile $@.little $@ --from little --to big --from-bitwidth 64 --to-bitwidth 32
+	@$(RM) $@.little
+else
 $(SOUND_BIN_DIR)/sequences.bin:
 	@$(PRINT) "$(GREEN)Decompressing:  $(BLUE)$@ $(NO_COL)\n"
 	$(V)$(PYTHON) $(TOOLS_DIR)/decompress.py sound/sequences_compressed.bin $(SOUND_BIN_DIR)/sequences.bin
+endif
 
 $(SOUND_BIN_DIR)/sequences_header: $(SOUND_BIN_DIR)/sequences.bin
 	@true
