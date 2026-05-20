@@ -535,7 +535,7 @@ int main(int argc, char *argv[]) {
     }
 
     // start the thread for setting up the game
-#ifdef LOADING_SCREEN_SUPPORTED
+#if defined(LOADING_SCREEN_SUPPORTED) && !defined(TARGET_WII_U)
     bool threadSuccess = false;
     if (!gCLIOpts.hideLoadingScreen && !gCLIOpts.headless) {
         if (init_thread_handle(&gLoadingThread, main_game_init, NULL, NULL, 0) == 0) {
