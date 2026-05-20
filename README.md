@@ -4,15 +4,19 @@
 
 This fork is an experimental Wii U porting effort for [Super Mario 64 Coop DX](https://github.com/coop-deluxe/sm64coopdx).
 
-The goal is to explore whether Coop DX can be adapted into a Wii U Homebrew Launcher build, starting with an offline `.rpx` target before attempting any network features. This is being done as a preservation and homebrew learning project.
+## Goal
+
+The goal of this project is to explore how far sm64coopdx can be ported to the Wii U,
+starting with an offline `.rpx` target before attempting any network features.
+This is also a personal learning project to get hands-on experience with C
+and homebrew development for consoles.
 
 ## Current Status
 
-This Wii U port is in an early experimental stage.
+This Wii U port is in an very early experimental stage.
 
-The project now builds with the Wii U toolchain and can produce a testable RPX. In Cemu, startup has progressed past filesystem setup, ROM lookup, and part of the asset loading flow, reaching the early loading/UI path. The port is not playable yet, but it no longer crashes during this stage, and some textures (such as the ground, castle, and grass) now load correctly.
-
-The build and packaging flow is still provisional, and some diagnostics are being used while the port is being stabilized.
+The project now builds with the Wii U toolchain and can produce a testable RPX.
+In Cemu, the port is not playable yet, but it no longer crashes during this stage, and some textures (such as the ground, castle, and grass) now load correctly.
 
 ## Credits
 
@@ -23,5 +27,7 @@ The build and packaging flow is still provisional, and some diagnostics are bein
 
 ## Legal Notice
 
-This repository does not include ROMs, extracted game assets, or generated files derived from Nintendo content. Building this project requires users to provide their own legally obtained Super Mario 64 ROM.
+This repository does not include ROMs, extracted game assets, or generated files derived from Nintendo content.
+Building this project requires users to provide their own legally obtained US Super Mario 64 ROM.
+
 
