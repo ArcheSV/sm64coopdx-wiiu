@@ -826,8 +826,7 @@ ifeq ($(WINDOW_API),DXGI)
   BACKEND_LDFLAGS += -ld3dcompiler -ldxgi -ldxguid
   BACKEND_LDFLAGS += -lsetupapi -ldinput8 -luser32 -lgdi32 -limm32 -lole32 -loleaut32 -lshell32 -lwinmm -lversion -luuid -static
 else ifeq ($(WINDOW_API),GX2)
-  BACKEND_CFLAGS += -DHAVE_SDL2=1
-  BACKEND_LDFLAGS += -lSDL2 -lwut
+  BACKEND_LDFLAGS += -lwut
 else ifeq ($(findstring SDL,$(WINDOW_API)),SDL)
   ifeq ($(WINDOWS_BUILD),1)
     BACKEND_LDFLAGS += -lglew32 -lglu32 -lopengl32

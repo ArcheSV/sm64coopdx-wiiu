@@ -6,7 +6,19 @@
 #include "pc/mods/mods.h"
 
 #ifdef TARGET_WII_U
-#include <SDL2/SDL.h>
+#include <coreinit/time.h>
+#endif
+
+#ifdef TARGET_WII_U
+static f64 djui_profiler_get_time(void) {
+    return (f64)OSGetSystemTime() / (f64)OSTimerClockSpeed;
+}
+#else
+static f64 djui_profiler_get_time(void) {
+    f64 freq = SDL_GetPerformanceFrequency();
+    f64 curr = SDL_GetPerformanceCounter();
+    return curr / freq;
+}
 #endif
 
 #define MAX_PROFILED_MODS 16
@@ -39,9 +51,7 @@ void lua_profiler_start_counter(UNUSED struct Mod *mod) {
 #ifndef WAPI_DUMMY
     for (s32 i = 0; i != MIN(MAX_PROFILED_MODS, gActiveMods.entryCount); ++i) {
         if (gActiveMods.entries[i] == mod) {
-            f64 freq = SDL_GetPerformanceFrequency();
-            f64 curr = SDL_GetPerformanceCounter();
-            sPrfDisplay->entries[i].counter.start = curr / freq;
+            sPrfDisplay->entries[i].counter.start = djui_profiler_get_time();
             return;
         }
     }
@@ -54,11 +64,8 @@ void lua_profiler_stop_counter(UNUSED struct Mod *mod) {
 #ifndef WAPI_DUMMY
     for (s32 i = 0; i != MIN(MAX_PROFILED_MODS, gActiveMods.entryCount); ++i) {
         if (gActiveMods.entries[i] == mod) {
-            f64 freq = SDL_GetPerformanceFrequency();
-            f64 curr = SDL_GetPerformanceCounter();
-
             struct DjuiPrfCounter *counter = &sPrfDisplay->entries[i].counter;
-            counter->end = curr / freq;
+            counter->end = djui_profiler_get_time();
             counter->sum += counter->end - counter->start;
             return;
         }
