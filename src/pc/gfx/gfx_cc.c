@@ -7,7 +7,7 @@ static u8 sAllowCCPrint = 1;
 
 bool gfx_cm_uses_second_texture(struct CombineMode* cm) {
     for (int i = 0; i < 16; i++) {
-        u8 v = cm->all_values[i];
+        u8 v = gfx_cm_get_component(cm, i);
         switch (v) {
             case CC_TEXEL1:
             case CC_TEXEL1A:

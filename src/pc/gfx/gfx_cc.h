@@ -77,18 +77,34 @@ struct CombineMode {
     };
     union {
         struct {
-            uint8_t use_alpha    : 1;
-            uint8_t use_fog      : 1;
-            uint8_t texture_edge : 1;
-            uint8_t use_dither   : 1;
-            uint8_t use_2cycle   : 1;
-            uint8_t light_map    : 1;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            uint32_t              : 26;
+            uint32_t light_map    : 1;
+            uint32_t use_2cycle   : 1;
+            uint32_t use_dither   : 1;
+            uint32_t texture_edge : 1;
+            uint32_t use_fog      : 1;
+            uint32_t use_alpha    : 1;
+#else
+            uint32_t use_alpha    : 1;
+            uint32_t use_fog      : 1;
+            uint32_t texture_edge : 1;
+            uint32_t use_dither   : 1;
+            uint32_t use_2cycle   : 1;
+            uint32_t light_map    : 1;
+            uint32_t              : 26;
+#endif
         };
         uint32_t flags;
     };
     uint64_t hash;
 };
 #pragma pack()
+
+static inline uint8_t gfx_cm_get_component(struct CombineMode *cm, uint8_t index) {
+    const uint32_t values[4] = { cm->rgb1, cm->alpha1, cm->rgb2, cm->alpha2 };
+    return (values[index / 4] >> ((index % 4) * 8)) & 0xff;
+}
 
 #define SHADER_CMD_LENGTH 16
 #define CC_MAX_SHADERS 64

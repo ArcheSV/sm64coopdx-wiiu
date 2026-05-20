@@ -219,7 +219,7 @@ static void gfx_generate_cc(struct ColorCombiner *cc) {
     u8 input_number[CC_ENUM_MAX] = { 0 };
 
     for  (int i = 0; i < SHADER_CMD_LENGTH; i++) {
-        u8 cm_cmd = cc->cm.all_values[i];
+        u8 cm_cmd = gfx_cm_get_component(&cc->cm, i);
         u8 shader_cmd = 0;
         switch (cm_cmd) {
             case CC_0:
