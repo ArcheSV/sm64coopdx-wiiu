@@ -7,6 +7,10 @@
 #include <windows.h>
 extern HWND gfx_dxgi_get_h_wnd(void);
 static bool mouse_relative_prev_cursor_state;
+#elif defined(TARGET_WII_U)
+#include <vpad/input.h>
+
+#include "pc/gfx/gfx_gx2.h"
 #elif defined(CAPI_SDL1)
 #include <SDL/SDL.h>
 #elif defined(CAPI_SDL2)
@@ -65,7 +69,9 @@ static u32 controller_mouse_dxgi_button_state(u32* mouse_held, bool has_focus) {
 #endif // WAPI_DXGI
 
 void controller_mouse_read_window(void) {
+#ifndef TARGET_WII_U
     if (!mouse_init_ok) { return; }
+#endif
 
 #if defined(WAPI_DXGI)
     HWND game_window = gfx_dxgi_get_h_wnd();
@@ -82,6 +88,23 @@ void controller_mouse_read_window(void) {
 #elif defined(CAPI_SDL1) || defined(CAPI_SDL2)
     mouse_window_buttons = SDL_GetMouseState(&mouse_window_x, &mouse_window_y);
     mouse_window_x -= gfx_current_dimensions.x_adjust_4by3;
+#elif defined(TARGET_WII_U)
+    VPADStatus status;
+    VPADReadError err;
+    VPADTouchData touch;
+
+    VPADRead(VPAD_CHAN_0, &status, 1, &err);
+    if (err != VPAD_READ_SUCCESS) { return; }
+
+    VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_854X480, &touch, &status.tpFiltered1);
+    if (!touch.touched || touch.validity != VPAD_VALID) {
+        mouse_window_buttons = 0;
+        return;
+    }
+
+    mouse_window_buttons = MOUSE_BUTTON_1;
+    mouse_window_x = ((s32) touch.x * (s32) g_window_width) / 854 - gfx_current_dimensions.x_adjust_4by3;
+    mouse_window_y = ((s32) touch.y * (s32) g_window_height) / 480;
 #endif
 }
 
