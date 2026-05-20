@@ -14,9 +14,18 @@ static const uint8_t reg_map[] = {
     _R4, // SHADER_INPUT_2
     _R5, // SHADER_INPUT_3
     _R6, // SHADER_INPUT_4
+    _R9, // SHADER_INPUT_5
+    _R10, // SHADER_INPUT_6
+    _R11, // SHADER_INPUT_7
+    _R12, // SHADER_INPUT_8
     _R7, // SHADER_TEXEL0
     _R7, // SHADER_TEXEL0A
     _R8, // SHADER_TEXEL1
+    _R8, // SHADER_TEXEL1A
+    ALU_SRC_1, // SHADER_1
+    _R1, // SHADER_COMBINED
+    _R1, // SHADER_COMBINEDA
+    _R127, // SHADER_NOISE
 };
 
 #define ADD_INSTR(...) \
