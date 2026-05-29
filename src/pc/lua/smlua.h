@@ -50,6 +50,7 @@ void smlua_exec_str(const char* str);
 int smlua_load_script(struct Mod* mod, struct ModFile* file, u16 remoteIndex, bool isModInit);
 #if defined(TARGET_WII_U)
 bool smlua_wiiu_bind_constant_global_if_exists(lua_State *L, const char *name);
+void smlua_wiiu_cheats_before_set_mario_action(struct MarioState *m, u32 *action);
 #endif
 
 void smlua_init(void);

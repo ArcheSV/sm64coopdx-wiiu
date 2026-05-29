@@ -1146,6 +1146,9 @@ u32 set_mario_action(struct MarioState *m, u32 action, u32 actionArg) {
     smlua_call_event_hooks(HOOK_BEFORE_SET_MARIO_ACTION, m, action, actionArg, &actionOverride);
     if (actionOverride == 1) { return TRUE; }
     if (actionOverride != 0) { action = actionOverride; }
+#if defined(TARGET_WII_U)
+    smlua_wiiu_cheats_before_set_mario_action(m, &action);
+#endif
 
     switch (action & ACT_GROUP_MASK) {
         case ACT_GROUP_MOVING:

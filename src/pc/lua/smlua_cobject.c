@@ -742,6 +742,20 @@ static void smlua_wiiu_expose_lazy_array(lua_State *L, const char *name, SmluaWi
     wiiu_diag_mark("smlua_cobject_init_globals: expose lazy array %s end top=%d", name, lua_gettop(L));
 }
 
+static void smlua_wiiu_expose_eager_array(lua_State *L, const char *name, SmluaWiiULazyArrayInfo *info) {
+    wiiu_diag_mark("smlua_cobject_init_globals: expose eager array %s begin count=%d top=%d", name, info->count, lua_gettop(L));
+    lua_newtable(L);
+    int tableIndex = lua_gettop(L);
+    for (s32 i = 0; i < info->count; i++) {
+        lua_pushinteger(L, i);
+        void *ptr = (u8 *)info->base + (i * info->stride);
+        smlua_push_object(L, info->lot, ptr, NULL);
+        lua_settable(L, tableIndex);
+    }
+    lua_setglobal(L, name);
+    wiiu_diag_mark("smlua_cobject_init_globals: expose eager array %s end top=%d", name, lua_gettop(L));
+}
+
 static SmluaWiiULazyArrayInfo sWiiULazyMarioStates = { LOT_MARIOSTATE, gMarioStates, sizeof(gMarioStates[0]), MAX_PLAYERS };
 static SmluaWiiULazyArrayInfo sWiiULazyNetworkPlayers = { LOT_NETWORKPLAYER, gNetworkPlayers, sizeof(gNetworkPlayers[0]), MAX_PLAYERS };
 static SmluaWiiULazyArrayInfo sWiiULazyCharacters = { LOT_CHARACTER, gCharacters, sizeof(gCharacters[0]), CT_MAX };
@@ -753,7 +767,7 @@ bool smlua_wiiu_bind_cobject_global_if_exists(lua_State *L, const char *name) {
     if (name == NULL) { return false; }
 
     if (strcmp(name, "gMarioStates") == 0) {
-        smlua_wiiu_expose_lazy_array(L, "gMarioStates", &sWiiULazyMarioStates);
+        smlua_wiiu_expose_eager_array(L, "gMarioStates", &sWiiULazyMarioStates);
         return true;
     }
     if (strcmp(name, "gNetworkPlayers") == 0) {
@@ -1034,6 +1048,11 @@ void smlua_cobject_init_per_file_globals(const char* path) {
 
 void smlua_cobject_init_global_globals(void) {
     lua_State* L = gLuaState;
+
+#if defined(TARGET_WII_U)
+    wiiu_diag_mark("smlua_cobject_init_global_globals: skipped on Wii U");
+    return;
+#endif
 
     lua_pushglobaltable(L);
     int fileGlobalIndex = lua_gettop(L);

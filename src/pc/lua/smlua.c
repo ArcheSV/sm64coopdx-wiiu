@@ -1237,6 +1237,69 @@ static const char* smlua_wiiu_script_reader(lua_State* L, void* data, size_t* si
     return chunk;
 }
 
+#if defined(WIIU_LUA_SCRIPT_SMOKE_TESTS)
+static int smlua_wiiu_script_smoke_one(const char *name, const char *source, bool useErrorHandler) {
+    lua_State *L = gLuaState;
+    int top = lua_gettop(L);
+    size_t length = strlen(source);
+    struct SmluaWiiuScriptReader reader = {
+        .buffer = source,
+        .length = length,
+        .offset = 0,
+        .chunkSize = 512,
+        .chunks = 0,
+    };
+
+    wiiu_diag_mark("script smoke: %s lua_load begin len=%u top=%d", name, (u32)length, top);
+    int rc = lua_load(L, smlua_wiiu_script_reader, &reader, name, "t");
+    wiiu_diag_mark("script smoke: %s lua_load rc=%d top=%d chunks=%u offset=%u",
+                   name, rc, lua_gettop(L), reader.chunks, (u32)reader.offset);
+
+    if (rc == LUA_OK) {
+        wiiu_diag_mark("script smoke: %s pcall begin top=%d handler=%d", name, lua_gettop(L), useErrorHandler);
+        rc = useErrorHandler ? smlua_pcall(L, 0, 1, 0) : lua_pcall(L, 0, 1, 0);
+        wiiu_diag_mark("script smoke: %s pcall rc=%d top=%d type=%s",
+                       name, rc, lua_gettop(L), lua_typename(L, lua_type(L, -1)));
+    }
+
+    if (rc != LUA_OK) {
+        const char *err = lua_tostring(L, -1);
+        wiiu_diag_mark("script smoke: %s err=%s", name, err ? err : "(non-string)");
+    }
+
+    lua_settop(L, top);
+    wiiu_diag_mark("script smoke: %s cleanup top=%d", name, lua_gettop(L));
+    return rc;
+}
+
+static bool smlua_wiiu_script_smoke_tests(void) {
+    wiiu_diag_mark("script smoke: begin");
+    if (smlua_wiiu_script_smoke_one("@wiiu_smoke_core_1",
+                                    "return 1\n",
+                                    false) != LUA_OK) {
+        return false;
+    }
+    if (smlua_wiiu_script_smoke_one("@wiiu_smoke_core_2",
+                                    "return 2\n",
+                                    false) != LUA_OK) {
+        return false;
+    }
+    if (smlua_wiiu_script_smoke_one("@wiiu_smoke_core_3",
+                                    "return 3\n",
+                                    false) != LUA_OK) {
+        return false;
+    }
+    if (smlua_wiiu_script_smoke_one("@wiiu_smoke_libs",
+                                    "local t = { value = math.sqrt(81) }\n"
+                                    "return string.sub('abc', 2) .. tostring(t.value)\n",
+                                    false) != LUA_OK) {
+        return false;
+    }
+    wiiu_diag_mark("script smoke: end ok");
+    return true;
+}
+#endif
+
 #if defined(WIIU_LUA_TRACE_LINES)
 static void smlua_wiiu_line_trace_hook(lua_State* L, lua_Debug* ar) {
     lua_getinfo(L, "Sl", ar);
@@ -1299,6 +1362,15 @@ int smlua_load_script(struct Mod* mod, struct ModFile* file, u16 remoteIndex, bo
     }
     f_close(f);
     f_delete(f);
+
+#if defined(TARGET_WII_U) && defined(WIIU_LUA_SCRIPT_TRUNCATE_BYTES)
+    if (WIIU_LUA_SCRIPT_TRUNCATE_BYTES > 0 && length > WIIU_LUA_SCRIPT_TRUNCATE_BYTES) {
+        wiiu_diag_mark("smlua_load_script: truncate len=%u -> %u %s",
+                       (u32)length, (u32)WIIU_LUA_SCRIPT_TRUNCATE_BYTES, file->cachedPath);
+        length = WIIU_LUA_SCRIPT_TRUNCATE_BYTES;
+        ((char*)buffer)[length] = '\0';
+    }
+#endif
 
 #if defined(TARGET_WII_U) && defined(WIIU_LUA_PREBIND_SCRIPT_CONSTANTS)
     smlua_wiiu_bind_script_constants(L, (const char*)buffer, length, file->cachedPath);
@@ -1701,6 +1773,13 @@ void smlua_init(void) {
     wiiu_diag_mark("smlua_init: script loading disabled");
     LOG_INFO("[WIIU LUA] script loading disabled");
     return;
+#endif
+#if defined(TARGET_WII_U) && defined(WIIU_LUA_SCRIPT_SMOKE_TESTS)
+    if (!smlua_wiiu_script_smoke_tests()) {
+        wiiu_diag_mark("smlua_init: script smoke failed");
+        sys_trace("smlua_init: script smoke failed");
+        return;
+    }
 #endif
     wiiu_diag_mark("smlua_init: script loading begin");
     sys_trace("smlua_init: script loading begin");

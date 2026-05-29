@@ -501,8 +501,9 @@ void smlua_sync_table_init_global_globals(u16 modRemoteIndex) {
     lua_State* L = gLuaState;
     LUA_STACK_CHECK_BEGIN(L);
 
-#if defined(TARGET_WII_U) && defined(WIIU_LUA_PLAIN_SYNC_GLOBALS)
+#if defined(TARGET_WII_U)
     (void)modRemoteIndex;
+    wiiu_diag_mark("smlua_sync_table_init_global_globals: wiiu plain begin top=%d", lua_gettop(L));
     lua_pushglobaltable(L);
     int plainGlobalIndex = lua_gettop(L);
 
@@ -521,6 +522,7 @@ void smlua_sync_table_init_global_globals(u16 modRemoteIndex) {
     lua_settable(L, plainGlobalIndex);
 
     lua_pop(L, 1); // pop global table
+    wiiu_diag_mark("smlua_sync_table_init_global_globals: wiiu plain end top=%d", lua_gettop(L));
     LUA_STACK_CHECK_END(L);
     return;
 #endif

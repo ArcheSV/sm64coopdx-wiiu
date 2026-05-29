@@ -5,6 +5,7 @@
 
 #include "game/level_update.h"
 #include "game/area.h"
+#include "game/display.h"
 #include "game/mario.h"
 #include "game/mario_step.h"
 #include "game/mario_actions_stationary.h"
@@ -19,6 +20,7 @@
 #include "pc/network/network_player.h"
 #include "include/level_misc_macros.h"
 #include "include/macro_presets.h"
+#include "include/sm64.h"
 #include "include/sounds.h"
 #include "utils/smlua_anim_utils.h"
 #include "utils/smlua_collision_utils.h"
@@ -26,6 +28,7 @@
 #include "include/macros.h"
 
 #include <math.h>
+#include <stdio.h>
 
 bool smlua_functions_valid_param_count(lua_State* L, int expected) {
     int top = lua_gettop(L);
@@ -1239,12 +1242,189 @@ static int smlua_math_tween(lua_State *L) {
     return smlua_wiiu_push_num(L, a + t * (b - a));
 }
 
+#if defined(TARGET_WII_U)
+enum WiiUCheat {
+    WIIU_CHEAT_MOON_JUMP,
+    WIIU_CHEAT_GOD_MODE,
+    WIIU_CHEAT_INFINITE_LIVES,
+    WIIU_CHEAT_SUPER_SPEED,
+    WIIU_CHEAT_RESPONSIVE_CONTROLS,
+    WIIU_CHEAT_RAPID_FIRE,
+    WIIU_CHEAT_BLJ_ANYWHERE,
+    WIIU_CHEAT_ALWAYS_TRIPLE_JUMP,
+    WIIU_CHEAT_MAX,
+};
+
+static bool sWiiUCheatsEnabled[WIIU_CHEAT_MAX] = { false };
+
+static void smlua_wiiu_apply_knockback_escape(struct MarioState *m) {
+    if (m->action == ACT_FORWARD_GROUND_KB ||
+        m->action == ACT_BACKWARD_GROUND_KB ||
+        m->action == ACT_SOFT_FORWARD_GROUND_KB ||
+        m->action == ACT_HARD_BACKWARD_GROUND_KB ||
+        m->action == ACT_FORWARD_AIR_KB ||
+        m->action == ACT_BACKWARD_AIR_KB ||
+        m->action == ACT_HARD_FORWARD_AIR_KB ||
+        m->action == ACT_HARD_BACKWARD_AIR_KB ||
+        m->action == ACT_AIR_HIT_WALL) {
+        set_mario_action(m, ACT_FREEFALL, 0);
+    }
+}
+
+static int smlua_wiiu_set_cheat(lua_State *L) {
+    int index = lua_tointeger(L, 1);
+    if (index < 0 || index >= WIIU_CHEAT_MAX) { return 0; }
+    if (index == WIIU_CHEAT_RAPID_FIRE || index == WIIU_CHEAT_ALWAYS_TRIPLE_JUMP) {
+        sWiiUCheatsEnabled[index] = false;
+        return 0;
+    }
+
+    sWiiUCheatsEnabled[index] = lua_toboolean(L, 2);
+    return 0;
+}
+
+static int smlua_wiiu_set_moon_jump(lua_State *L) {
+    sWiiUCheatsEnabled[WIIU_CHEAT_MOON_JUMP] = lua_toboolean(L, 1);
+    return 0;
+}
+
+static int smlua_wiiu_lua_mark(lua_State *L) {
+    const char *msg = lua_tostring(L, 1);
+    wiiu_diag_mark("lua mark: %s", msg ? msg : "(null)");
+    return 0;
+}
+
+void smlua_wiiu_cheats_before_set_mario_action(struct MarioState *m, u32 *action) {
+    if (m == NULL || action == NULL) { return; }
+    if (!sWiiUCheatsEnabled[WIIU_CHEAT_ALWAYS_TRIPLE_JUMP]) { return; }
+    if (m->playerIndex != 0) { return; }
+    if (m->forwardVel >= 20.0f) { return; }
+    if (m->action != ACT_DOUBLE_JUMP_LAND) { return; }
+    if (*action != ACT_JUMP) { return; }
+
+    *action = ACT_TRIPLE_JUMP;
+}
+
+static int smlua_wiiu_cheats_tick(lua_State *L) {
+    (void)L;
+
+    struct MarioState *m = &gMarioStates[0];
+    if (m == NULL || m->controller == NULL) { return 0; }
+
+    if (sWiiUCheatsEnabled[WIIU_CHEAT_MOON_JUMP] && (m->controller->buttonDown & A_BUTTON) != 0) {
+        m->vel[1] = 80.0f;
+        smlua_wiiu_apply_knockback_escape(m);
+    }
+
+    if (sWiiUCheatsEnabled[WIIU_CHEAT_GOD_MODE]) {
+        m->health = 0x880;
+        m->healCounter = 0;
+        m->hurtCounter = 0;
+        m->peakHeight = m->pos[1];
+    }
+
+    if (sWiiUCheatsEnabled[WIIU_CHEAT_INFINITE_LIVES]) {
+        m->numLives = 100;
+    }
+
+    if (sWiiUCheatsEnabled[WIIU_CHEAT_SUPER_SPEED] &&
+        m->action != ACT_BUBBLED &&
+        m->action != ACT_WATER_JUMP &&
+        m->action != ACT_HOLD_WATER_JUMP) {
+        m->vel[0] *= 4.0f;
+        m->vel[2] *= 4.0f;
+    }
+
+    if (sWiiUCheatsEnabled[WIIU_CHEAT_RESPONSIVE_CONTROLS] &&
+        (m->action == ACT_WALKING ||
+         m->action == ACT_HOLD_WALKING ||
+         m->action == ACT_HOLD_HEAVY_WALKING ||
+         m->action == ACT_FINISH_TURNING_AROUND ||
+         m->action == ACT_CRAWLING)) {
+        m->faceAngle[1] = m->intendedYaw;
+    }
+
+    if (sWiiUCheatsEnabled[WIIU_CHEAT_BLJ_ANYWHERE] &&
+        m->action == ACT_LONG_JUMP &&
+        (m->controller->buttonDown & Z_TRIG) != 0 &&
+        m->forwardVel < -15.0f) {
+        m->vel[1] = -30.0f;
+    }
+
+    return 0;
+}
+
+static int smlua_wiiu_moon_jump_tick(lua_State *L) {
+    return smlua_wiiu_cheats_tick(L);
+}
+
+static int smlua_wiiu_faster_swimming_tick(lua_State *L) {
+    (void)L;
+
+    struct MarioState *m = &gMarioStates[0];
+    if (m == NULL) { return 0; }
+    if ((m->action & ACT_FLAG_SWIMMING) == 0) { return 0; }
+
+    m->vel[0] *= 2.0f;
+    if (m->action != ACT_WATER_PLUNGE) {
+        m->vel[1] *= 2.0f;
+    }
+    m->vel[2] *= 2.0f;
+
+    return 0;
+}
+
+static int smlua_wiiu_personal_star_counter_hud(lua_State *L) {
+    int stars = (int)luaL_optinteger(L, 1, 0);
+    int run = (int)luaL_optinteger(L, 2, 0);
+    int total = (int)luaL_optinteger(L, 3, 0);
+    f32 width;
+    char starsText[16];
+    char runText[16];
+    char totalText[16];
+
+    snprintf(starsText, sizeof(starsText), "%d", stars);
+    snprintf(runText, sizeof(runText), "%d", run);
+    snprintf(totalText, sizeof(totalText), "%d", total);
+
+    djui_hud_set_resolution(RESOLUTION_N64);
+    djui_hud_set_font(FONT_HUD);
+    width = djui_hud_get_screen_width();
+
+    djui_hud_set_color(255, 255, 255, 255);
+    djui_hud_print_text(starsText, width - 46.0f, 15.0f, 1.0f);
+    djui_hud_render_texture(&gGlobalTextures.star, width - 76.0f, 15.0f, 1.0f, 1.0f);
+
+    djui_hud_set_color(255, 255, 255, 255);
+    djui_hud_print_text(runText, width - 46.0f, 32.0f, 1.0f);
+    djui_hud_set_color(232, 17, 35, 255);
+    djui_hud_render_texture(&gGlobalTextures.star, width - 76.0f, 32.0f, 1.0f, 1.0f);
+
+    djui_hud_set_color(255, 255, 255, 255);
+    djui_hud_print_text(totalText, width - 46.0f, 49.0f, 1.0f);
+    djui_hud_set_color(50, 176, 40, 255);
+    djui_hud_render_texture(&gGlobalTextures.star, width - 76.0f, 49.0f, 1.0f, 1.0f);
+
+    return 0;
+}
+
+#endif
+
 void smlua_bind_wiiu_builtin_helpers(void) {
     lua_State *L = gLuaState;
 
     smlua_bind_function(L, "SOUND_ARG_LOAD", smlua_func_SOUND_ARG_LOAD);
     smlua_bind_function(L, "network_player_get_palette_color", smlua_func_network_player_get_palette_color);
     smlua_bind_function(L, "network_player_get_override_palette_color", smlua_func_network_player_get_override_palette_color);
+#if defined(TARGET_WII_U)
+    smlua_bind_function(L, "wiiu_set_cheat", smlua_wiiu_set_cheat);
+    smlua_bind_function(L, "wiiu_cheats_tick", smlua_wiiu_cheats_tick);
+    smlua_bind_function(L, "wiiu_set_moon_jump", smlua_wiiu_set_moon_jump);
+    smlua_bind_function(L, "wiiu_moon_jump_tick", smlua_wiiu_moon_jump_tick);
+    smlua_bind_function(L, "wiiu_faster_swimming_tick", smlua_wiiu_faster_swimming_tick);
+    smlua_bind_function(L, "wiiu_personal_star_counter_hud", smlua_wiiu_personal_star_counter_hud);
+    smlua_bind_function(L, "wiiu_lua_mark", smlua_wiiu_lua_mark);
+#endif
 
     smlua_wiiu_set_math_function(L, "sqr", smlua_math_sqr);
     smlua_wiiu_set_math_function(L, "clamp", smlua_math_clamp);
