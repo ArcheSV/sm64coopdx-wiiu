@@ -3,14 +3,33 @@
 
 extern "C" {
 #include "pc/mods/mod_fs.h"
+#include "pc/platform.h"
 }
 
-static const u64 DYNOS_BIN_COMPRESS_MAGIC = 0x4E4942534F4E5944llu;
+static const u8 DYNOS_BIN_COMPRESS_MAGIC[] = { 'D', 'Y', 'N', 'O', 'S', 'B', 'I', 'N' };
 static FILE  *sFile = NULL;
 static u8 *sBufferUncompressed = NULL;
 static u8 *sBufferCompressed = NULL;
 static u64 sLengthUncompressed = 0;
 static u64 sLengthCompressed = 0;
+
+static inline bool DynOS_Bin_Compress_MagicEquals(const u8 *aBuffer) {
+    return memcmp(aBuffer, DYNOS_BIN_COMPRESS_MAGIC, sizeof(DYNOS_BIN_COMPRESS_MAGIC)) == 0;
+}
+
+static inline u64 DynOS_Bin_Compress_ReadU64LE(const u8 *aBuffer) {
+    u64 value = 0;
+    for (u32 i = 0; i < sizeof(u64); i++) {
+        value |= ((u64) aBuffer[i]) << (i * 8);
+    }
+    return value;
+}
+
+static inline void DynOS_Bin_Compress_WriteU64LE(u8 *aBuffer, u64 aValue) {
+    for (u32 i = 0; i < sizeof(u64); i++) {
+        aBuffer[i] = (u8) ((aValue >> (i * 8)) & 0xFF);
+    }
+}
 
 static inline void DynOS_Bin_Compress_Init() {
     sFile = NULL;
@@ -50,14 +69,14 @@ bool DynOS_Bin_IsCompressed(const SysPath &aFilename) {
     )) return false;
 
     // Read magic
-    u64 _Magic = 0;
+    u8 _Magic[sizeof(DYNOS_BIN_COMPRESS_MAGIC)] = { 0 };
     if (!DynOS_Bin_Compress_Check(
-        fread(&_Magic, sizeof(u64), 1, sFile) == 1,
+        fread(_Magic, sizeof(u8), sizeof(_Magic), sFile) == sizeof(_Magic),
         __FUNCTION__, aFilename.c_str(), "Cannot read magic"
     )) return false;
 
     // Compare with magic constant
-    if (_Magic != DYNOS_BIN_COMPRESS_MAGIC) {
+    if (!DynOS_Bin_Compress_MagicEquals(_Magic)) {
         DynOS_Bin_Compress_Free();
         return false;
     }
@@ -136,13 +155,15 @@ bool DynOS_Bin_Compress(const SysPath &aFilename) {
 
     // Write magic
     if (!DynOS_Bin_Compress_Check(
-        fwrite(&DYNOS_BIN_COMPRESS_MAGIC, sizeof(u64), 1, sFile) == 1,
+        fwrite(DYNOS_BIN_COMPRESS_MAGIC, sizeof(u8), sizeof(DYNOS_BIN_COMPRESS_MAGIC), sFile) == sizeof(DYNOS_BIN_COMPRESS_MAGIC),
         __FUNCTION__, aFilename.c_str(), "Cannot write magic"
     )) return false;
 
     // Write uncompressed file size
+    u8 _LengthUncompressedBytes[sizeof(u64)];
+    DynOS_Bin_Compress_WriteU64LE(_LengthUncompressedBytes, sLengthUncompressed);
     if (!DynOS_Bin_Compress_Check(
-        fwrite(&sLengthUncompressed, sizeof(u64), 1, sFile) == 1,
+        fwrite(_LengthUncompressedBytes, sizeof(u8), sizeof(_LengthUncompressedBytes), sFile) == sizeof(_LengthUncompressedBytes),
         __FUNCTION__, aFilename.c_str(), "Cannot write uncompressed file size"
     )) return false;
 
@@ -160,6 +181,7 @@ bool DynOS_Bin_Compress(const SysPath &aFilename) {
 
 static BinFile *DynOS_Bin_Decompress_ModFs(const SysPath &aFilename) {
     DynOS_Bin_Compress_Init();
+    sys_trace("DynOS_Bin_Decompress_ModFs: begin %s", aFilename.c_str());
 
     // Read file data
     void *_Buffer = NULL;
@@ -172,7 +194,7 @@ static BinFile *DynOS_Bin_Decompress_ModFs(const SysPath &aFilename) {
     sLengthCompressed = _Size;
 
     // Check file length
-    u64 _LengthHeader = (u64) (sizeof(u64) + sizeof(u64));
+    u64 _LengthHeader = (u64) (sizeof(DYNOS_BIN_COMPRESS_MAGIC) + sizeof(u64));
     if (!DynOS_Bin_Compress_Check(
         sLengthCompressed >= _LengthHeader,
         __FUNCTION__, aFilename.c_str(), "Empty file"
@@ -180,16 +202,17 @@ static BinFile *DynOS_Bin_Decompress_ModFs(const SysPath &aFilename) {
 
     // Compare with magic constant
     // If not equal, it's not a compressed file
-    u64 _Magic = ((u64 *) _Buffer)[0];
-    if (_Magic != DYNOS_BIN_COMPRESS_MAGIC) {
+    if (!DynOS_Bin_Compress_MagicEquals(sBufferCompressed)) {
         BinFile *_BinFile = BinFile::OpenB(sBufferCompressed, sLengthCompressed);
+        sys_trace("DynOS_Bin_Decompress_ModFs: raw end %s size=%llu bin=%p",
+                  aFilename.c_str(), (unsigned long long)sLengthCompressed, _BinFile);
         DynOS_Bin_Compress_Free();
         return _BinFile;
     }
     PrintNoNewLine("Decompressing file \"%s\"...", aFilename.c_str());
 
     // Read expected uncompressed file size
-    sLengthUncompressed = ((u64 *) _Buffer)[1];
+    sLengthUncompressed = DynOS_Bin_Compress_ReadU64LE(sBufferCompressed + sizeof(DYNOS_BIN_COMPRESS_MAGIC));
     sLengthCompressed -= _LengthHeader;
     u8 *_BufferCompressed = sBufferCompressed + _LengthHeader;
 
@@ -214,6 +237,9 @@ static BinFile *DynOS_Bin_Decompress_ModFs(const SysPath &aFilename) {
 
     // Return uncompressed data as a BinFile
     BinFile *_BinFile = BinFile::OpenB(sBufferUncompressed, sLengthUncompressed);
+    sys_trace("DynOS_Bin_Decompress_ModFs: end %s compressed=%llu uncompressed=%llu bin=%p",
+              aFilename.c_str(), (unsigned long long)sLengthCompressed,
+              (unsigned long long)sLengthUncompressed, _BinFile);
     DynOS_Bin_Compress_Free();
     Print(" Done.");
     return _BinFile;
@@ -221,6 +247,7 @@ static BinFile *DynOS_Bin_Decompress_ModFs(const SysPath &aFilename) {
 
 BinFile *DynOS_Bin_Decompress(const SysPath &aFilename) {
     DynOS_Bin_Compress_Init();
+    sys_trace("DynOS_Bin_Decompress: begin %s", aFilename.c_str());
 
     // Check modfs
     if (is_mod_fs_file(aFilename.c_str())) {
@@ -234,25 +261,29 @@ BinFile *DynOS_Bin_Decompress(const SysPath &aFilename) {
     )) return NULL;
 
     // Read magic
-    u64 _Magic = 0;
+    u8 _Magic[sizeof(DYNOS_BIN_COMPRESS_MAGIC)] = { 0 };
     if (!DynOS_Bin_Compress_Check(
-        f_read(&_Magic, sizeof(u64), 1, sFile) == 1,
+        f_read(_Magic, sizeof(u8), sizeof(_Magic), sFile) == sizeof(_Magic),
         __FUNCTION__, aFilename.c_str(), "Cannot read magic"
     )) return NULL;
 
     // Compare with magic constant
     // If not equal, it's not a compressed file
-    if (_Magic != DYNOS_BIN_COMPRESS_MAGIC) {
+    if (!DynOS_Bin_Compress_MagicEquals(_Magic)) {
         DynOS_Bin_Compress_Free();
-        return BinFile::OpenR(aFilename.c_str());
+        BinFile *_RawFile = BinFile::OpenR(aFilename.c_str());
+        sys_trace("DynOS_Bin_Decompress: raw end %s bin=%p", aFilename.c_str(), _RawFile);
+        return _RawFile;
     }
     PrintNoNewLine("Decompressing file \"%s\"...", aFilename.c_str());
 
     // Read expected uncompressed file size
+    u8 _LengthUncompressedBytes[sizeof(u64)];
     if (!DynOS_Bin_Compress_Check(
-        f_read(&sLengthUncompressed, sizeof(u64), 1, sFile) == 1,
+        f_read(_LengthUncompressedBytes, sizeof(u8), sizeof(_LengthUncompressedBytes), sFile) == sizeof(_LengthUncompressedBytes),
         __FUNCTION__, aFilename.c_str(), "Cannot read uncompressed file size"
     )) return NULL;
+    sLengthUncompressed = DynOS_Bin_Compress_ReadU64LE(_LengthUncompressedBytes);
 
     // Retrieve file length
     if (!DynOS_Bin_Compress_Check(
@@ -261,21 +292,22 @@ BinFile *DynOS_Bin_Decompress(const SysPath &aFilename) {
     )) return NULL;
 
     // Check file length
-    u64 _LengthHeader = (u64) (sizeof(u64) + sizeof(u64));
+    u64 _LengthHeader = (u64) (sizeof(DYNOS_BIN_COMPRESS_MAGIC) + sizeof(u64));
     if (!DynOS_Bin_Compress_Check(
         (sLengthCompressed = (u64) f_tell(sFile)) >= _LengthHeader,
         __FUNCTION__, aFilename.c_str(), "Empty file"
     )) return NULL;
+    sLengthCompressed -= _LengthHeader;
 
     // Allocate memory for compressed buffer
     if (!DynOS_Bin_Compress_Check(
-        (sBufferCompressed = (u8 *) calloc(sLengthCompressed - _LengthHeader, sizeof(u8))) != NULL,
+        (sBufferCompressed = (u8 *) calloc(sLengthCompressed, sizeof(u8))) != NULL,
         __FUNCTION__, aFilename.c_str(), "Cannot allocate memory for decompression"
     )) return NULL; else f_seek(sFile, _LengthHeader, SEEK_SET);
 
     // Read input data
     if (!DynOS_Bin_Compress_Check(
-        f_read(sBufferCompressed, sizeof(u8), sLengthCompressed - _LengthHeader, sFile) == sLengthCompressed - _LengthHeader,
+        f_read(sBufferCompressed, sizeof(u8), sLengthCompressed, sFile) == sLengthCompressed,
         __FUNCTION__, aFilename.c_str(), "Cannot read compressed data"
     )) return NULL; else DynOS_Bin_Compress_Close();
 
@@ -300,6 +332,9 @@ BinFile *DynOS_Bin_Decompress(const SysPath &aFilename) {
 
     // Return uncompressed data as a BinFile
     BinFile *_BinFile = BinFile::OpenB(sBufferUncompressed, sLengthUncompressed);
+    sys_trace("DynOS_Bin_Decompress: end %s compressed=%llu uncompressed=%llu bin=%p",
+              aFilename.c_str(), (unsigned long long)sLengthCompressed,
+              (unsigned long long)sLengthUncompressed, _BinFile);
     DynOS_Bin_Compress_Free();
     Print(" Done.");
     return _BinFile;

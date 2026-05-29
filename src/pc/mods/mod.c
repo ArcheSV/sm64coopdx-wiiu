@@ -10,6 +10,12 @@
 #include "pc/fs/fmem.h"
 #include <stdint.h>
 
+#if defined(TARGET_WII_U) && !defined(WIIU_VERBOSE_MOD_TRACE)
+#define MOD_TRACE(...) do { } while (0)
+#else
+#define MOD_TRACE(...) sys_trace(__VA_ARGS__)
+#endif
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -23,7 +29,11 @@ size_t mod_get_lua_size(struct Mod* mod) {
 
     for (int i = 0; i < mod->fileCount; i++) {
         struct ModFile* file = &mod->files[i];
+#if defined(TARGET_WII_U)
+        if (!path_ends_with(file->relativePath, ".lua")) { continue; }
+#else
         if (!(path_ends_with(file->relativePath, ".lua") || path_ends_with(file->relativePath, ".luac"))) { continue; }
+#endif
         size += file->size;
     }
 
@@ -54,7 +64,9 @@ static void mod_activate_bin(struct Mod* mod, struct ModFile* file) {
 
     // Add to custom actors
     LOG_INFO("Activating DynOS bin: '%s', '%s'", file->cachedPath, geoName);
+    MOD_TRACE("mod_activate_bin: begin %s %s", file->cachedPath, geoName);
     dynos_add_actor_custom(mod->index, fileIndex, file->cachedPath, geoName);
+    MOD_TRACE("mod_activate_bin: end %s %s", file->cachedPath, geoName);
 }
 
 static void mod_activate_col(struct ModFile* file) {
@@ -77,7 +89,9 @@ static void mod_activate_col(struct ModFile* file) {
 
     // Add to custom actors
     LOG_INFO("Activating DynOS col: '%s', '%s'", file->cachedPath, colName);
+    MOD_TRACE("mod_activate_col: begin %s %s", file->cachedPath, colName);
     dynos_add_collision(file->cachedPath, colName);
+    MOD_TRACE("mod_activate_col: end %s %s", file->cachedPath, colName);
 }
 
 static void mod_activate_tex(struct ModFile* file) {
@@ -100,7 +114,9 @@ static void mod_activate_tex(struct ModFile* file) {
 
     // Add to custom actors
     LOG_INFO("Activating DynOS tex: '%s', '%s'", file->cachedPath, texName);
+    MOD_TRACE("mod_activate_tex: begin %s %s", file->cachedPath, texName);
     dynos_add_texture(file->cachedPath, texName);
+    MOD_TRACE("mod_activate_tex: end %s %s", file->cachedPath, texName);
 }
 
 static void mod_activate_lvl(struct Mod* mod, struct ModFile* file) {
@@ -123,7 +139,9 @@ static void mod_activate_lvl(struct Mod* mod, struct ModFile* file) {
 
     // Add to levels
     LOG_INFO("Activating DynOS lvl: '%s', '%s'", file->cachedPath, lvlName);
+    MOD_TRACE("mod_activate_lvl: begin %s %s", file->cachedPath, lvlName);
     dynos_add_level(mod->index, file->cachedPath, lvlName);
+    MOD_TRACE("mod_activate_lvl: end %s %s", file->cachedPath, lvlName);
 }
 
 static void mod_activate_bhv(struct Mod *mod, struct ModFile *file) {
@@ -146,21 +164,37 @@ static void mod_activate_bhv(struct Mod *mod, struct ModFile *file) {
 
     // Add to levels
     LOG_INFO("Activating DynOS bhv: '%s', '%s'", file->cachedPath, bhvName);
+    MOD_TRACE("mod_activate_bhv: begin %s %s", file->cachedPath, bhvName);
     dynos_add_behavior(mod->index, file->cachedPath, bhvName);
+    MOD_TRACE("mod_activate_bhv: end %s %s", file->cachedPath, bhvName);
 }
 
 void mod_activate(struct Mod* mod) {
     // activate dynos models
     for (int i = 0; i < mod->fileCount; i++) {
         struct ModFile* file = &mod->files[i];
+        MOD_TRACE("mod_activate: file begin %s", file->relativePath);
         file->modifiedTimestamp = fs_sys_get_modified_time(file->cachedPath);
+        MOD_TRACE("mod_activate: cache add begin %s", file->relativePath);
         mod_cache_add(mod, file, false);
+        MOD_TRACE("mod_activate: cache add end %s", file->relativePath);
 
         // forcefully update md5 hash
         if (gNetworkType == NT_SERVER) {
+            MOD_TRACE("mod_activate: cache update begin %s", file->relativePath);
             mod_cache_update(mod, file);
+            MOD_TRACE("mod_activate: cache update end %s", file->relativePath);
         }
 
+#if defined(TARGET_WII_U) && defined(WIIU_SKIP_DYNOS_ACTIVATE)
+        if (path_ends_with(file->relativePath, ".bin") ||
+            path_ends_with(file->relativePath, ".col") ||
+            path_ends_with(file->relativePath, ".lvl") ||
+            path_ends_with(file->relativePath, ".bhv") ||
+            path_ends_with(file->relativePath, ".tex")) {
+            MOD_TRACE("mod_activate: skipped dynos activation %s", file->relativePath);
+        }
+#else
         if (path_ends_with(file->relativePath, ".bin")) {
             mod_activate_bin(mod, file);
         }
@@ -176,6 +210,8 @@ void mod_activate(struct Mod* mod) {
         if (path_ends_with(file->relativePath, ".tex")) {
             mod_activate_tex(file);
         }
+#endif
+        MOD_TRACE("mod_activate: file end %s", file->relativePath);
     }
 }
 
@@ -363,7 +399,11 @@ static bool mod_load_files(struct Mod* mod, char* fullPath) {
 
     // deal with mod directory
     {
+#if defined(TARGET_WII_U)
+        const char* fileTypes[] = { ".lua", NULL };
+#else
         const char* fileTypes[] = { ".lua", ".luac", NULL };
+#endif
         if (!mod_load_files_dir(mod, fullPath, "", fileTypes, true)) { return false; }
     }
 

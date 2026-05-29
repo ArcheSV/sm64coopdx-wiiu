@@ -571,6 +571,7 @@ enum ModelExtendedId smlua_model_util_id_to_ext_id(u16 id) {
 }
 
 enum ModelExtendedId smlua_model_util_get_id(const char* name) {
+    sys_trace("smlua_model_util_get_id: begin %s", name);
     // Find geolayout
     const void* asset = dynos_geolayout_get(name);
     if (asset == NULL) {
@@ -582,6 +583,7 @@ enum ModelExtendedId smlua_model_util_get_id(const char* name) {
     for (u32 i = 0; i < E_MODEL_MAX; i++) {
         struct ModelUtilsInfo* m = &sModels[i];
         if (m->asset == asset) {
+            sys_trace("smlua_model_util_get_id: builtin %s id=%d", name, m->extId);
             return m->extId;
         }
     }
@@ -590,6 +592,7 @@ enum ModelExtendedId smlua_model_util_get_id(const char* name) {
     for (u32 i = 0; i < sCustomModelsCount; i++) {
         struct ModelUtilsInfo* m = &sCustomModels[i];
         if (m->asset == asset) {
+            sys_trace("smlua_model_util_get_id: cached custom %s id=%d", name, m->extId);
             return m->extId;
         }
     }
@@ -613,5 +616,6 @@ enum ModelExtendedId smlua_model_util_get_id(const char* name) {
     info->isDisplayList = false;
     info->layer = LAYER_OPAQUE;
 
+    sys_trace("smlua_model_util_get_id: new custom %s id=%d", name, info->extId);
     return info->extId;
 }

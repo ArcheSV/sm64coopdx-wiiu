@@ -9,9 +9,9 @@
 char gGetHostName[256] = { 0 };
 
 static bool ns_socket_initialize(enum NetworkType networkType, bool reconnecting) {
-    (void)networkType;
     (void)reconnecting;
-    return false;
+    // Allow local host sessions until Wii U socket networking is ported.
+    return (networkType != NT_CLIENT);
 }
 
 static s64 ns_socket_get_id(u8 localIndex) {
@@ -50,7 +50,7 @@ static int ns_socket_send(u8 localIndex, void* addr, u8* data, u16 dataLength) {
     (void)addr;
     (void)data;
     (void)dataLength;
-    return -1;
+    return 0;
 }
 
 static void ns_socket_get_lobby_id(char* destination, u32 destLength) {

@@ -19,6 +19,7 @@
 #include "pc/djui/djui_lua_profiler.h"
 #include "pc/djui/djui_panel.h"
 #include "pc/configfile.h"
+#include "pc/platform.h"
 #include "pc/utils/misc.h"
 #include "pc/lua/utils/smlua_model_utils.h"
 
@@ -48,7 +49,18 @@ static const char* sLuaHookedEventTypeName[] = {
 };
 
 int smlua_call_hook(lua_State* L, int nargs, int nresults, int errfunc, struct Mod* activeMod, struct ModFile* activeModFile) {
-    if (!gGameInited) { return 0; } // Don't call hooks while the game is booting
+    if (!gGameInited) {
+        lua_pop(L, nargs + 1);
+        return 0;
+    } // Don't call hooks while the game is booting
+    static int sWiiUHookTraceCount = 0;
+    if (sWiiUHookTraceCount < 200) {
+        sys_trace("smlua_call_hook: begin mod=%s file=%s nargs=%d",
+            activeMod ? activeMod->relativePath : "<null>",
+            activeModFile ? activeModFile->relativePath : "<null>",
+            nargs);
+        sWiiUHookTraceCount++;
+    }
 
     struct Mod* prevActiveMod = gLuaActiveMod;
     struct ModFile* prevActiveModFile = gLuaActiveModFile;
@@ -68,6 +80,12 @@ int smlua_call_hook(lua_State* L, int nargs, int nresults, int errfunc, struct M
 
     gLuaActiveMod = prevActiveMod;
     gLuaActiveModFile = prevActiveModFile;
+    if (sWiiUHookTraceCount < 200) {
+        sys_trace("smlua_call_hook: end rc=%d mod=%s file=%s",
+            rc,
+            activeMod ? activeMod->relativePath : "<null>",
+            activeModFile ? activeModFile->relativePath : "<null>");
+    }
     return rc;
 }
 
@@ -83,6 +101,11 @@ int smlua_hook_event(lua_State* L) {
 
     if (hookType >= HOOK_MAX) {
         LOG_LUA_LINE("Hook Type: %d exceeds max!", hookType);
+        return 0;
+    }
+
+    if (!lua_isfunction(L, -1)) {
+        LOG_LUA_LINE("Tried to hook non-function value to '%s'", sLuaHookedEventTypeName[hookType]);
         return 0;
     }
 
@@ -103,7 +126,7 @@ int smlua_hook_event(lua_State* L) {
     hook->modFile[hook->count] = gLuaActiveModFile;
     hook->count++;
 
-    return 1;
+    return 0;
 }
 
   ///////////////////
@@ -476,6 +499,7 @@ const char* smlua_get_name_from_hooked_behavior_id(enum BehaviorId id) {
 }
 
 int smlua_hook_custom_bhv(BehaviorScript *bhvScript, const char *bhvName) {
+    wiiu_diag_mark("smlua_hook_custom_bhv: begin %s count=%d", bhvName ? bhvName : "<null>", sHookedBehaviorsCount);
     if (sHookedBehaviorsCount >= MAX_HOOKED_BEHAVIORS) {
         LOG_ERROR("Hooked behaviors exceeded maximum references!");
         return 0;
@@ -512,11 +536,14 @@ int smlua_hook_custom_bhv(BehaviorScript *bhvScript, const char *bhvName) {
     // It's also used for some things that would normally access a LUA behavior instead.
     lua_State* L = gLuaState;
     if (L != NULL) {
+        wiiu_diag_mark("smlua_hook_custom_bhv: setglobal begin %s id=0x%04X", bhvName ? bhvName : "<null>", (u32)customBehaviorId);
         lua_pushinteger(L, customBehaviorId);
         lua_setglobal(L, bhvName);
+        wiiu_diag_mark("smlua_hook_custom_bhv: setglobal end %s", bhvName ? bhvName : "<null>");
         LOG_INFO("Registered custom behavior: 0x%04hX - %s", customBehaviorId, bhvName);
     }
 
+    wiiu_diag_mark("smlua_hook_custom_bhv: end %s", bhvName ? bhvName : "<null>");
     return 1;
 }
 
@@ -1440,9 +1467,23 @@ int smlua_update_mod_menu_element_inputbox(lua_State* L) {
 void smlua_call_mod_menu_element_hook(struct LuaHookedModMenuElement* hooked, int index) {
     lua_State* L = gLuaState;
     if (L == NULL) { return; }
+    if (hooked == NULL) { return; }
+
+    int top = lua_gettop(L);
+    sys_trace("mod_menu_hook: begin index=%d element=%d ref=%d name=%s mod=%s top=%d",
+        index, hooked->element, hooked->reference, hooked->name,
+        hooked->mod ? hooked->mod->relativePath : "<null>", top);
+    wiiu_diag_mark("mod_menu_hook: begin index=%d element=%d ref=%d name=%s top=%d",
+        index, hooked->element, hooked->reference, hooked->name, top);
 
     // push the callback onto the stack
     lua_rawgeti(L, LUA_REGISTRYINDEX, hooked->reference);
+    if (!lua_isfunction(L, -1)) {
+        wiiu_diag_mark("mod_menu_hook: invalid callback index=%d ref=%d type=%s", index, hooked->reference, lua_typename(L, lua_type(L, -1)));
+        sys_trace("mod_menu_hook: invalid callback index=%d ref=%d type=%s", index, hooked->reference, lua_typename(L, lua_type(L, -1)));
+        lua_pop(L, 1);
+        return;
+    }
 
     // push parameter
     u8 params = 2;
@@ -1467,7 +1508,11 @@ void smlua_call_mod_menu_element_hook(struct LuaHookedModMenuElement* hooked, in
     }
 
     // call the callback
-    if (0 != smlua_call_hook(L, params, 1, 0, hooked->mod, hooked->modFile)) {
+    int rc = smlua_call_hook(L, params, 1, 0, hooked->mod, hooked->modFile);
+    lua_settop(L, top);
+    wiiu_diag_mark("mod_menu_hook: end index=%d rc=%d top=%d", index, rc, lua_gettop(L));
+    sys_trace("mod_menu_hook: end index=%d rc=%d top=%d", index, rc, lua_gettop(L));
+    if (0 != rc) {
         LOG_LUA("Failed to call the mod menu element callback: %s", hooked->name);
         return;
     }

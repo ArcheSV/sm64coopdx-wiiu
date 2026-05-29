@@ -216,6 +216,10 @@ u64 dynos_level_cmd_get(void *cmd, u64 offset) {
     return DynOS_Level_CmdGet(cmd, offset);
 }
 
+uintptr_t dynos_level_cmd_get_ptr(void *cmd, u64 offset) {
+    return DynOS_Level_CmdGetPtr(cmd, offset);
+}
+
 void dynos_level_cmd_next(void *cmd) {
     DynOS_Level_CmdNext((LvlCmd*) cmd);
 }

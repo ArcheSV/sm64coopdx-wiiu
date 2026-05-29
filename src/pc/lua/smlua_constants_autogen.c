@@ -1,5 +1,10 @@
 char gSmluaConstants[] = ""
+#if defined(TARGET_WII_U)
+"-- math.randomseed skipped on Wii U during Lua startup\n"
+#else
 "math.randomseed(get_time())\n"
+#endif
+#if !defined(TARGET_WII_U)
 "_SyncTable = {\n"
 "__index = function (t,k)\n"
 "local _table = rawget(t, '_table')\n"
@@ -19,9 +24,14 @@ char gSmluaConstants[] = ""
 "__newindex = function (_,k,_) error('Attempting to modify key `' .. k .. '` of read-only table') end,\n"
 "__metatable = false\n"
 "}\n"
+#endif
 "-----------\n"
 "-- table --\n"
 "-----------\n"
+#if defined(TARGET_WII_U)
+"table.copy = table_copy\n"
+"table.deepcopy = table_deepcopy\n"
+#else
 "--- Creates a shallow copy of table `t`\n"
 "--- @param t table\n"
 "--- @return table\n"
@@ -50,11 +60,15 @@ char gSmluaConstants[] = ""
 "setmetatable(t, mt)\n"
 "return t\n"
 "end\n"
+#endif
 "-----------\n"
 "-- sound --\n"
 "-----------\n"
 "--- @type Vec3f\n"
+#if !defined(TARGET_WII_U)
 "gGlobalSoundSource = create_read_only_table({ x = 0, y = 0, z = 0 })\n"
+#endif
+#if !defined(TARGET_WII_U)
 "--- @param bank number\n"
 "--- @param soundID number\n"
 "--- @param priority number\n"
@@ -70,6 +84,7 @@ char gSmluaConstants[] = ""
 "SOUND_STATUS_WAITING\n"
 ")\n"
 "end\n"
+#endif
 "-------------\n"
 "-- courses --\n"
 "-------------\n"
@@ -136,6 +151,7 @@ char gSmluaConstants[] = ""
 "------------------------------\n"
 "-- player palette functions --\n"
 "------------------------------\n"
+#if !defined(TARGET_WII_U)
 "--- @param np NetworkPlayer\n"
 "--- @param part PlayerPart\n"
 "--- @return Color\n"
@@ -160,10 +176,23 @@ char gSmluaConstants[] = ""
 "}\n"
 "return color\n"
 "end\n"
+#endif
 "--------------------------\n"
 "-- local math functions --\n"
 "--------------------------\n"
+#if !defined(TARGET_WII_U)
+#if defined(TARGET_WII_U)
+"__math_min = math.min\n"
+"__math_max = math.max\n"
+"__math_sqrt = math.sqrt\n"
+"__math_floor = math.floor\n"
+"__math_ceil = math.ceil\n"
+"__math_cos = math.cos\n"
+"__math_sin = math.sin\n"
+"__math_pi = math.pi\n"
+#else
 "local __math_min, __math_max, __math_sqrt, __math_floor, __math_ceil, __math_cos, __math_sin, __math_pi  = math.min, math.max, math.sqrt, math.floor, math.ceil, math.cos, math.sin, math.pi\n"
+#endif
 "------------\n"
 "-- tweens --\n"
 "------------\n"
@@ -372,11 +401,19 @@ char gSmluaConstants[] = ""
 "end\n"
 "return y\n"
 "end\n"
+#if defined(TARGET_WII_U)
+"__common_signed_conversion = function (x, size)\n"
+#else
 "local __common_signed_conversion = function (x, size)\n"
+#endif
 "x = __math_floor(x) & (1 << size) - 1\n"
 "return x - ((x & (1 << (size - 1))) << 1)\n"
 "end\n"
+#if defined(TARGET_WII_U)
+"__common_unsigned_conversion = function (x, size)\n"
+#else
 "local __common_unsigned_conversion = function (x, size)\n"
+#endif
 "return __math_floor(x) & (1 << size) - 1\n"
 "end\n"
 "--- @param x number\n"
@@ -421,6 +458,7 @@ char gSmluaConstants[] = ""
 "function math.u32(x)\n"
 "return __common_unsigned_conversion(x, 32)\n"
 "end\n"
+#endif
 "--- @type integer\n"
 "FONT_TINY = -1\n"
 "--- @type integer\n"
@@ -443,6 +481,7 @@ char gSmluaConstants[] = ""
 "clamp = math.clamp\n"
 "clampf = math.clamp\n"
 "hypotf = math.hypot\n"
+#if !defined(TARGET_WII_U)
 "gVec2fZero = create_read_only_table({x=0,y=0})\n"
 "gVec2fOne = create_read_only_table({x=1,y=1})\n"
 "gVec3fZero = create_read_only_table({x=0,y=0,z=0})\n"
@@ -467,6 +506,7 @@ char gSmluaConstants[] = ""
 "gMat4Zero = create_read_only_table({m00=0,m01=0,m02=0,m03=0,m10=0,m11=0,m12=0,m13=0,m20=0,m21=0,m22=0,m23=0,m30=0,m31=0,m32=0,m33=0})\n"
 "gMat4Identity = create_read_only_table({m00=1,m01=0,m02=0,m03=0,m10=0,m11=1,m12=0,m13=0,m20=0,m21=0,m22=1,m23=0,m30=0,m31=0,m32=0,m33=1})\n"
 "gMat4Fullscreen = create_read_only_table({m00=0.00625,m01=0,m02=0,m03=0,m10=0,m11=0.008333333333333333,m12=0,m13=0,m20=0,m21=0,m22=-1,m23=0,m30=-1,m31=-1,m32=-1,m33=1})\n"
+#endif
 "INSTANT_WARP_INDEX_START=0x00\n"
 "INSTANT_WARP_INDEX_STOP=0x04\n"
 "MAX_AREAS=16\n"

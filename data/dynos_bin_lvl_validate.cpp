@@ -1,6 +1,7 @@
 #include "dynos.cpp.h"
 #include <map>
 #include <assert.h>
+#include <string.h>
 extern "C" {
 #include "include/level_commands.h"
 #include "include/model_ids.h"
@@ -20,7 +21,7 @@ extern "C" {
 struct LevelScriptCommand {
     u8 id;
     u8 size;
-    u8 ptrIdx[2];
+    u8 ptrIdx[16];
 };
 
 static bool sCommandMapFilled = false;
@@ -28,6 +29,10 @@ static std::map<u8, struct LevelScriptCommand> sCommandMap;
 
 static u8 sCurCommandId = 0xFF;
 static u8 sCurCommandOffset = 0xFF;
+
+static u8 LvlCmd_GetId(LevelScript value) {
+    return ((const u8 *) &value)[0];
+}
 
 #define ADD_COMMAND(_cmd) {               \
     LevelScript _script[] = { _cmd };     \
@@ -40,26 +45,31 @@ static void LvlCmd_Add(LevelScript script[], size_t size) {
     assert(size < 0xFF);
 
     // find the single pointer index
-    u8 ptrIdx[2] = { 0xFF, 0xFF };
+    u8 ptrIdx[16];
+    memset(ptrIdx, 0xFF, sizeof(ptrIdx));
     for (u8 i = 0; i < size; i++) {
         if (script[i] != POINTER) { continue; }
-        if (ptrIdx[0] == 0xFF) {
-            ptrIdx[0] = i;
-        } else {
-            assert(ptrIdx[1] == 0xFF);
-            ptrIdx[1] = i;
+        for (u8 j = 0; j < ARRAY_COUNT(ptrIdx); j++) {
+            if (ptrIdx[j] != 0xFF) { continue; }
+            ptrIdx[j] = i;
+            break;
         }
     }
 
     // extract the id and make sure it's unique
-    u8 id = (u8)(script[0] & 0xFF);
+    u8 id = LvlCmd_GetId(script[0]);
     if (sCommandMap.count(id) != 0) { return; }
 
     // add the command to the map
     sCommandMap[id] = {
         .id = id,
         .size = (u8)size,
-        .ptrIdx = { ptrIdx[0], ptrIdx[1] },
+        .ptrIdx = {
+            ptrIdx[0], ptrIdx[1], ptrIdx[2], ptrIdx[3],
+            ptrIdx[4], ptrIdx[5], ptrIdx[6], ptrIdx[7],
+            ptrIdx[8], ptrIdx[9], ptrIdx[10], ptrIdx[11],
+            ptrIdx[12], ptrIdx[13], ptrIdx[14], ptrIdx[15],
+        },
     };
 }
 
@@ -152,16 +162,31 @@ void DynOS_Lvl_Validate_Begin() {
 
 bool DynOS_Lvl_Validate_RequirePointer(u32 value) {
     // figure out which command we're inside
-    if (sCurCommandId == 0xFF || sCurCommandOffset >= sCommandMap[sCurCommandId].size) {
-        u8 id = (u8)(value & 0xFF);
+    bool newCommand = (sCurCommandId == 0xFF);
+    if (!newCommand) {
+        auto currentCommand = sCommandMap.find(sCurCommandId);
+        newCommand = (currentCommand == sCommandMap.end() || sCurCommandOffset >= currentCommand->second.size);
+    }
+    if (newCommand) {
+        u8 id = LvlCmd_GetId(value);
         sCurCommandId = id;
         sCurCommandOffset = 0;
     }
 
+    auto command = sCommandMap.find(sCurCommandId);
+    if (command == sCommandMap.end()) {
+        sCurCommandOffset++;
+        return false;
+    }
+
     // figure out if we expect a pointer
-    bool ret = (
-        sCurCommandOffset == sCommandMap[sCurCommandId].ptrIdx[0]
-        || sCurCommandOffset == sCommandMap[sCurCommandId].ptrIdx[1]);
+    bool ret = false;
+    for (u8 i = 0; i < ARRAY_COUNT(command->second.ptrIdx); i++) {
+        if (sCurCommandOffset == command->second.ptrIdx[i]) {
+            ret = true;
+            break;
+        }
+    }
 
     // advance command offset
     sCurCommandOffset++;

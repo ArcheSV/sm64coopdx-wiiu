@@ -2,6 +2,7 @@
 #include "pc/crash_handler.h"
 #include "pc/mods/mods.h"
 #include "pc/network/network.h"
+#include "pc/platform.h"
 
 #define MAX_UNWOUND_SIZE 256
 static struct LSTNetworkType sUnwoundLnts[MAX_UNWOUND_LNT] = { 0 };
@@ -441,12 +442,8 @@ void smlua_set_sync_table_field_from_network(u64 seq, u16 modRemoteIndex, u16 ln
     LUA_STACK_CHECK_END(L);
 }
 
-void smlua_sync_table_init_globals(const char* path, u16 modRemoteIndex) {
+static void smlua_sync_table_init_globals_at_index(int fileGlobalIndex, u16 modRemoteIndex) {
     lua_State* L = gLuaState;
-    LUA_STACK_CHECK_BEGIN(L);
-
-    lua_getfield(L, LUA_REGISTRYINDEX, path);
-    int fileGlobalIndex = lua_gettop(L);
     {
         // create and attach global sync table
         lua_pushstring(L, "gGlobalSyncTable");
@@ -486,15 +483,147 @@ void smlua_sync_table_init_globals(const char* path, u16 modRemoteIndex) {
         // attach player sync table
         lua_settable(L, fileGlobalIndex);
     }
+}
+
+void smlua_sync_table_init_globals(const char* path, u16 modRemoteIndex) {
+    lua_State* L = gLuaState;
+    LUA_STACK_CHECK_BEGIN(L);
+
+    lua_getfield(L, LUA_REGISTRYINDEX, path);
+    int fileGlobalIndex = lua_gettop(L);
+    smlua_sync_table_init_globals_at_index(fileGlobalIndex, modRemoteIndex);
     lua_pop(L, 1); // pop file's "global" table
 
     LUA_STACK_CHECK_END(L);
 }
 
+void smlua_sync_table_init_global_globals(u16 modRemoteIndex) {
+    lua_State* L = gLuaState;
+    LUA_STACK_CHECK_BEGIN(L);
+
+#if defined(TARGET_WII_U) && defined(WIIU_LUA_PLAIN_SYNC_GLOBALS)
+    (void)modRemoteIndex;
+    lua_pushglobaltable(L);
+    int plainGlobalIndex = lua_gettop(L);
+
+    lua_pushstring(L, "gGlobalSyncTable");
+    lua_newtable(L);
+    lua_settable(L, plainGlobalIndex);
+
+    lua_pushstring(L, "gPlayerSyncTable");
+    lua_newtable(L);
+    int playerTableIndex = lua_gettop(L);
+    for (s32 i = 0; i < MAX_PLAYERS; i++) {
+        lua_pushinteger(L, i);
+        lua_newtable(L);
+        lua_settable(L, playerTableIndex);
+    }
+    lua_settable(L, plainGlobalIndex);
+
+    lua_pop(L, 1); // pop global table
+    LUA_STACK_CHECK_END(L);
+    return;
+#endif
+
+    lua_pushglobaltable(L);
+    int fileGlobalIndex = lua_gettop(L);
+    smlua_sync_table_init_globals_at_index(fileGlobalIndex, modRemoteIndex);
+    lua_pop(L, 1); // pop global table
+
+    LUA_STACK_CHECK_END(L);
+}
+
+static int smlua_sync_table_index(lua_State *L);
+static int smlua_sync_table_newindex(lua_State *L);
+
 void smlua_bind_sync_table(void) {
     lua_State* L = gLuaState;
     LUA_STACK_CHECK_BEGIN(L);
+    wiiu_diag_mark("smlua_bind_sync_table: _set_sync_table_field begin top=%d", lua_gettop(L));
     smlua_bind_function(L, "_set_sync_table_field", smlua__set_sync_table_field);
+    wiiu_diag_mark("smlua_bind_sync_table: _set_sync_table_field end top=%d", lua_gettop(L));
+#if defined(TARGET_WII_U) && defined(WIIU_LUA_C_SYNC_TABLE)
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable newtable begin top=%d", lua_gettop(L));
+    lua_newtable(L);
+
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable __index begin");
+    lua_pushcfunction(L, smlua_sync_table_index);
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable __index pushed top=%d", lua_gettop(L));
+    lua_setfield(L, -2, "__index");
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable __index end top=%d", lua_gettop(L));
+
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable __newindex begin");
+    lua_pushcfunction(L, smlua_sync_table_newindex);
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable __newindex pushed top=%d", lua_gettop(L));
+    lua_setfield(L, -2, "__newindex");
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable __newindex end top=%d", lua_gettop(L));
+
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable setglobal begin");
+    lua_setglobal(L, "_SyncTable");
+    wiiu_diag_mark("smlua_bind_sync_table: _SyncTable setglobal end top=%d", lua_gettop(L));
+#endif
+    LUA_STACK_CHECK_END(L);
+}
+
+static int smlua_sync_table_index(lua_State *L) {
+    lua_getfield(L, 1, "_table");
+    lua_pushvalue(L, 2);
+    lua_gettable(L, -2);
+    return 1;
+}
+
+static int smlua_sync_table_newindex(lua_State *L) {
+    lua_getfield(L, 1, "_table");
+    lua_pushvalue(L, 2);
+    lua_gettable(L, -2);
+    if (lua_rawequal(L, -1, 3)) {
+        return 0;
+    }
+
+    smlua_sync_table_send_field(0, 0, true);
+    return 0;
+}
+
+static int smlua_read_only_table_index(lua_State *L) {
+    lua_getfield(L, 1, "_table");
+    lua_pushvalue(L, 2);
+    lua_gettable(L, -2);
+    return 1;
+}
+
+static int smlua_read_only_table_newindex(lua_State *L) {
+    luaL_tolstring(L, 2, NULL);
+    const char *key = lua_tostring(L, -1);
+    return luaL_error(L, "Attempting to modify key `%s` of read-only table", key ? key : "?");
+}
+
+void smlua_bind_read_only_table(void) {
+    lua_State* L = gLuaState;
+    LUA_STACK_CHECK_BEGIN(L);
+
+    wiiu_diag_mark("smlua_bind_read_only_table: newtable begin top=%d", lua_gettop(L));
+    lua_newtable(L);
+    wiiu_diag_mark("smlua_bind_read_only_table: newtable end top=%d", lua_gettop(L));
+
+    wiiu_diag_mark("smlua_bind_read_only_table: __index begin");
+    lua_pushcfunction(L, smlua_read_only_table_index);
+    lua_setfield(L, -2, "__index");
+    wiiu_diag_mark("smlua_bind_read_only_table: __index end top=%d", lua_gettop(L));
+
+    wiiu_diag_mark("smlua_bind_read_only_table: __newindex begin");
+    lua_pushcfunction(L, smlua_read_only_table_newindex);
+    lua_setfield(L, -2, "__newindex");
+    wiiu_diag_mark("smlua_bind_read_only_table: __newindex end top=%d", lua_gettop(L));
+
+    wiiu_diag_mark("smlua_bind_read_only_table: __metatable begin");
+    lua_pushboolean(L, false);
+    lua_setfield(L, -2, "__metatable");
+    wiiu_diag_mark("smlua_bind_read_only_table: __metatable end top=%d", lua_gettop(L));
+
+    wiiu_diag_mark("smlua_bind_read_only_table: setglobal begin");
+    lua_setglobal(L, "_ReadOnlyTable");
+    wiiu_diag_mark("smlua_bind_read_only_table: setglobal end top=%d", lua_gettop(L));
+
     LUA_STACK_CHECK_END(L);
 }
 

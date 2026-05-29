@@ -15,12 +15,17 @@
 #include "engine/level_script.h"
 #include "pc/djui/djui_hud_utils.h"
 #include "pc/utils/misc.h"
+#include "pc/platform.h"
+#include "pc/network/network_player.h"
 #include "include/level_misc_macros.h"
 #include "include/macro_presets.h"
+#include "include/sounds.h"
 #include "utils/smlua_anim_utils.h"
 #include "utils/smlua_collision_utils.h"
 #include "game/hardcoded.h"
 #include "include/macros.h"
+
+#include <math.h>
 
 bool smlua_functions_valid_param_count(lua_State* L, int expected) {
     int top = lua_gettop(L);
@@ -148,6 +153,60 @@ int smlua_func_table_deepcopy(lua_State *L) {
 
     LUA_STACK_CHECK_END(L);
     return 1;
+}
+
+static int smlua_func_create_read_only_table_newindex(lua_State *L) {
+    luaL_tolstring(L, 2, NULL);
+    const char *key = lua_tostring(L, -1);
+    return luaL_error(L, "Attempting to modify key `%s` of read-only table", key ? key : "?");
+}
+
+static int smlua_func_create_read_only_table_call(lua_State *L) {
+    lua_settop(L, 0);
+    lua_pushvalue(L, lua_upvalueindex(1));
+    return smlua_func_table_copy(L);
+}
+
+int smlua_func_create_read_only_table(lua_State *L) {
+    if (!smlua_functions_valid_param_count(L, 1)) { return 0; }
+
+#if defined(TARGET_WII_U)
+    lua_newtable(L);
+    int proxyIndex = lua_gettop(L);
+
+    lua_pushvalue(L, 1);
+    lua_setfield(L, proxyIndex, "_table");
+
+    lua_getglobal(L, "_ReadOnlyTable");
+    if (lua_type(L, -1) == LUA_TTABLE) {
+        lua_setmetatable(L, proxyIndex);
+    } else {
+        lua_pop(L, 1);
+    }
+    return 1;
+#else
+    lua_createtable(L, 0, count);
+    int proxyIndex = lua_gettop(L);
+
+    lua_createtable(L, 0, 16);
+    int metatableIndex = lua_gettop(L);
+
+    lua_pushvalue(L, 1);
+    lua_setfield(L, metatableIndex, "__index");
+
+    lua_pushcfunction(L, smlua_func_create_read_only_table_newindex);
+    lua_setfield(L, metatableIndex, "__newindex");
+
+    lua_pushvalue(L, 1);
+    lua_pushcclosure(L, smlua_func_create_read_only_table_call, 1);
+    lua_setfield(L, metatableIndex, "__call");
+
+    lua_pushboolean(L, false);
+    lua_setfield(L, metatableIndex, "__metatable");
+
+    lua_setmetatable(L, proxyIndex);
+    return 1;
+#endif
 }
 
   //////////
@@ -408,10 +467,12 @@ int smlua_func_get_texture_info(lua_State* L) {
 
     struct TextureInfo texInfo = { 0 };
     const char* textureName = smlua_to_string(L, -1);
+    sys_trace("get_texture_info: begin %s", textureName);
     if (!dynos_texture_get(textureName, &texInfo)) {
         LOG_LUA_LINE("Could not find texture info for '%s'", textureName);
         return 0;
     }
+    sys_trace("get_texture_info: end %s tex=%p", textureName, texInfo.texture);
 
     lua_newtable(L);
 
@@ -521,7 +582,7 @@ s32 smlua_func_level_script_parse_callback(u8 type, void *cmd) {
 
         // OBJECT, OBJECT_WITH_ACTS
         case 0x24: {
-            const BehaviorScript *bhvPtr = (const BehaviorScript *) dynos_level_cmd_get(cmd, 20);
+            const BehaviorScript *bhvPtr = (const BehaviorScript *) dynos_level_cmd_get_ptr(cmd, 20);
             if (bhvPtr) {
                 bhvId = get_id_from_behavior(bhvPtr);
                 if (bhvId == id_bhv_max_count) {
@@ -585,7 +646,7 @@ s32 smlua_func_level_script_parse_callback(u8 type, void *cmd) {
 
         // MACRO_OBJECTS
         case 0x39: {
-            macroData = (MacroObject *) dynos_level_cmd_get(cmd, 4);
+            macroData = (MacroObject *) dynos_level_cmd_get_ptr(cmd, 4);
         } break;
 
         // None of the above
@@ -658,13 +719,13 @@ s32 smlua_func_level_script_parse_callback(u8 type, void *cmd) {
     return 0;
 }
 
-void smlua_func_level_script_parse(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return; }
+int smlua_func_level_script_parse(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
 
     lua_Integer levelNum = smlua_to_integer(L, 1);
     if (!gSmLuaConvertSuccess) {
         LOG_LUA_LINE("Invalid level script name");
-        return;
+        return 0;
     }
 
     struct LuaLevelScriptParse* preprocess = &sLevelScriptParse;
@@ -675,7 +736,7 @@ void smlua_func_level_script_parse(lua_State* L) {
 
     if (ref == -1) {
         LOG_LUA_LINE("Level Script Parse: %lld tried to parse using undefined function", levelNum);
-        return;
+        return 0;
     }
 
     preprocess->reference = ref;
@@ -685,7 +746,7 @@ void smlua_func_level_script_parse(lua_State* L) {
     void *script = dynos_level_get_script(levelNum);
     if (script == NULL) {
         LOG_LUA("Failed to find script: %lld", levelNum);
-        return;
+        return 0;
     }
     s32 modIndex = dynos_level_get_mod_index(levelNum);
 
@@ -701,6 +762,7 @@ void smlua_func_level_script_parse(lua_State* L) {
     // Restore current values
     gLevelScriptActive = currLevelScript;
     gLevelScriptModIndex = currModIndex;
+    return 0;
 }
 
   ///////////////////////
@@ -989,6 +1051,357 @@ int smlua_func_gfx_set_command(lua_State* L) {
     return 1;
 }
 
+#if defined(TARGET_WII_U)
+static void smlua_wiiu_set_global_function(lua_State *L, const char *name, lua_CFunction fn) {
+    lua_pushcfunction(L, fn);
+    lua_setglobal(L, name);
+}
+
+static void smlua_wiiu_set_math_function(lua_State *L, const char *name, lua_CFunction fn) {
+    lua_getglobal(L, "math");
+    lua_pushcfunction(L, fn);
+    lua_setfield(L, -2, name);
+    lua_pop(L, 1);
+}
+
+static double smlua_wiiu_num(lua_State *L, int index) {
+    return luaL_checknumber(L, index);
+}
+
+static int smlua_wiiu_push_num(lua_State *L, double value) {
+    lua_pushnumber(L, value);
+    return 1;
+}
+
+static int smlua_func_SOUND_ARG_LOAD(lua_State *L) {
+    int top = lua_gettop(L);
+    if (top < 3 || top > 4) {
+        LOG_LUA_LINE("Improper param count for 'SOUND_ARG_LOAD': Expected 3-4, Received %u", top);
+        return 0;
+    }
+
+    s32 bank = smlua_to_integer(L, 1);
+    if (!gSmLuaConvertSuccess) { return 0; }
+    s32 soundId = smlua_to_integer(L, 2);
+    if (!gSmLuaConvertSuccess) { return 0; }
+    s32 priority = smlua_to_integer(L, 3);
+    if (!gSmLuaConvertSuccess) { return 0; }
+    s32 flags = 0;
+    if (top >= 4 && !lua_isnil(L, 4)) {
+        flags = smlua_to_integer(L, 4);
+        if (!gSmLuaConvertSuccess) { return 0; }
+    }
+
+    lua_pushinteger(L, (s32)SOUND_ARG_LOAD(bank, soundId, priority, flags));
+    return 1;
+}
+
+static int smlua_wiiu_network_player_palette(lua_State *L, bool override) {
+    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
+
+    struct NetworkPlayer *np = (struct NetworkPlayer *)smlua_to_cobject(L, 1, LOT_NETWORKPLAYER);
+    if (!gSmLuaConvertSuccess) { return 0; }
+    int part = smlua_to_integer(L, 2);
+    if (!gSmLuaConvertSuccess) { return 0; }
+
+    lua_newtable(L);
+    lua_pushinteger(L, override ? network_player_get_override_palette_color_channel(np, part, 0) : network_player_get_palette_color_channel(np, part, 0));
+    lua_setfield(L, -2, "r");
+    lua_pushinteger(L, override ? network_player_get_override_palette_color_channel(np, part, 1) : network_player_get_palette_color_channel(np, part, 1));
+    lua_setfield(L, -2, "g");
+    lua_pushinteger(L, override ? network_player_get_override_palette_color_channel(np, part, 2) : network_player_get_palette_color_channel(np, part, 2));
+    lua_setfield(L, -2, "b");
+    return 1;
+}
+
+static int smlua_func_network_player_get_palette_color(lua_State *L) {
+    return smlua_wiiu_network_player_palette(L, false);
+}
+
+static int smlua_func_network_player_get_override_palette_color(lua_State *L) {
+    return smlua_wiiu_network_player_palette(L, true);
+}
+
+static int smlua_math_sqr(lua_State *L) { double x = smlua_wiiu_num(L, 1); return smlua_wiiu_push_num(L, x * x); }
+static int smlua_math_clamp(lua_State *L) {
+    double x = smlua_wiiu_num(L, 1), a = smlua_wiiu_num(L, 2), b = smlua_wiiu_num(L, 3);
+    if (x < a) { x = a; }
+    if (x > b) { x = b; }
+    return smlua_wiiu_push_num(L, x);
+}
+static int smlua_math_hypot(lua_State *L) {
+    double a = smlua_wiiu_num(L, 1), b = smlua_wiiu_num(L, 2);
+    return smlua_wiiu_push_num(L, sqrt(a * a + b * b));
+}
+static int smlua_math_sign(lua_State *L) { lua_pushinteger(L, smlua_wiiu_num(L, 1) >= 0 ? 1 : -1); return 1; }
+static int smlua_math_sign0(lua_State *L) {
+    double x = smlua_wiiu_num(L, 1);
+    lua_pushinteger(L, x != 0 ? (x > 0 ? 1 : -1) : 0);
+    return 1;
+}
+static int smlua_math_lerp(lua_State *L) {
+    double a = smlua_wiiu_num(L, 1), b = smlua_wiiu_num(L, 2), t = smlua_wiiu_num(L, 3);
+    return smlua_wiiu_push_num(L, a + (b - a) * t);
+}
+static int smlua_math_invlerp(lua_State *L) {
+    double a = smlua_wiiu_num(L, 1), b = smlua_wiiu_num(L, 2), x = smlua_wiiu_num(L, 3);
+    return smlua_wiiu_push_num(L, (x - a) / (b - a));
+}
+static int smlua_math_remap(lua_State *L) {
+    double a = smlua_wiiu_num(L, 1), b = smlua_wiiu_num(L, 2), c = smlua_wiiu_num(L, 3), d = smlua_wiiu_num(L, 4), x = smlua_wiiu_num(L, 5);
+    return smlua_wiiu_push_num(L, c + (d - c) * ((x - a) / (b - a)));
+}
+static int smlua_math_round(lua_State *L) {
+    double x = smlua_wiiu_num(L, 1);
+    lua_pushinteger(L, (lua_Integer)(x > 0 ? floor(x + 0.5) : ceil(x - 0.5)));
+    return 1;
+}
+static lua_Integer smlua_math_signed_bits(double x, int bits) {
+    u64 mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);
+    u64 u = ((u64)(s64)floor(x)) & mask;
+    u64 sign = 1ULL << (bits - 1);
+    s64 out = (s64)u;
+    if (u & sign) { out -= (s64)(1ULL << bits); }
+    return (lua_Integer)out;
+}
+static lua_Integer smlua_math_unsigned_bits(double x, int bits) {
+    u64 mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);
+    return (lua_Integer)(((u64)(s64)floor(x)) & mask);
+}
+static int smlua_math_s8(lua_State *L) { lua_pushinteger(L, smlua_math_signed_bits(smlua_wiiu_num(L, 1), 8)); return 1; }
+static int smlua_math_s16(lua_State *L) { lua_pushinteger(L, smlua_math_signed_bits(smlua_wiiu_num(L, 1), 16)); return 1; }
+static int smlua_math_s32(lua_State *L) { lua_pushinteger(L, smlua_math_signed_bits(smlua_wiiu_num(L, 1), 32)); return 1; }
+static int smlua_math_u8(lua_State *L) { lua_pushinteger(L, smlua_math_unsigned_bits(smlua_wiiu_num(L, 1), 8)); return 1; }
+static int smlua_math_u16(lua_State *L) { lua_pushinteger(L, smlua_math_unsigned_bits(smlua_wiiu_num(L, 1), 16)); return 1; }
+static int smlua_math_u32(lua_State *L) { lua_pushinteger(L, smlua_math_unsigned_bits(smlua_wiiu_num(L, 1), 32)); return 1; }
+
+#define WIIU_LUA_PI 3.14159265358979323846
+static double tw_out_bounce(double x) {
+    if (x < 1.0 / 2.75) { return 7.5625 * x * x; }
+    if (x < 2.0 / 2.75) { x -= 1.5 / 2.75; return 7.5625 * x * x + 0.75; }
+    if (x < 2.5 / 2.75) { x -= 2.25 / 2.75; return 7.5625 * x * x + 0.9375; }
+    x -= 2.625 / 2.75;
+    return 7.5625 * x * x + 0.984375;
+}
+static int tw_push(lua_State *L, double value) { return smlua_wiiu_push_num(L, value); }
+static int tw_in_sine(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - cos((x * WIIU_LUA_PI) / 2.0)); }
+static int tw_out_sine(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, sin((x * WIIU_LUA_PI) / 2.0)); }
+static int tw_in_out_sine(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, -(cos(WIIU_LUA_PI * x) - 1.0) / 2.0); }
+static int tw_out_in_sine(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * sin(x * WIIU_LUA_PI) : 1.0 - 0.5 * cos(((x * 2.0 - 1.0) * (WIIU_LUA_PI / 2.0)))); }
+static int tw_in_quad(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x * x); }
+static int tw_out_quad(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - ((1.0 - x) * (1.0 - x))); }
+static int tw_in_out_quad(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 2.0 * x * x : 1.0 - pow(-2.0 * x + 2.0, 2.0) / 2.0); }
+static int tw_out_in_quad(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * (-(2.0 * x) * ((2.0 * x) - 2.0)) : 0.5 + 0.5 * pow(2.0 * x - 1.0, 2.0)); }
+static int tw_in_cubic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x * x * x); }
+static int tw_out_cubic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - pow(1.0 - x, 3.0)); }
+static int tw_in_out_cubic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 4.0 * x * x * x : 1.0 - pow(-2.0 * x + 2.0, 3.0) / 2.0); }
+static int tw_out_in_cubic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * (pow(2.0 * x - 1.0, 3.0) + 1.0) : 0.5 + 0.5 * pow(2.0 * x - 1.0, 3.0)); }
+static int tw_in_quart(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, pow(x, 4.0)); }
+static int tw_out_quart(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - pow(1.0 - x, 4.0)); }
+static int tw_in_out_quart(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 8.0 * pow(x, 4.0) : 1.0 - pow(-2.0 * x + 2.0, 4.0) / 2.0); }
+static int tw_out_in_quart(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * (1.0 - pow(2.0 * x - 1.0, 4.0)) : 0.5 + 0.5 * pow(2.0 * x - 1.0, 4.0)); }
+static int tw_in_quint(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, pow(x, 5.0)); }
+static int tw_out_quint(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - pow(1.0 - x, 5.0)); }
+static int tw_in_out_quint(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 16.0 * pow(x, 5.0) : 1.0 - pow(-2.0 * x + 2.0, 5.0) / 2.0); }
+static int tw_out_in_quint(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * (pow(2.0 * x - 1.0, 5.0) + 1.0) : 0.5 + 0.5 * pow(2.0 * x - 1.0, 5.0)); }
+static int tw_in_expo(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x == 0.0 ? x : pow(2.0, 10.0 * x - 10.0)); }
+static int tw_out_expo(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x == 1.0 ? x : 1.0 - pow(2.0, -10.0 * x)); }
+static int tw_in_out_expo(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, (x == 0.0 || x == 1.0) ? x : (x < 0.5 ? pow(2.0, 20.0 * x - 10.0) / 2.0 : (2.0 - pow(2.0, -20.0 * x + 10.0)) / 2.0)); }
+static int tw_out_in_expo(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, (x == 0.0 || x == 1.0) ? x : (x < 0.5 ? 0.5 * (1.0 - pow(2.0, -20.0 * x)) : 0.5 + 0.5 * pow(2.0, 20.0 * x - 20.0))); }
+static int tw_in_circ(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - sqrt(1.0 - x * x)); }
+static int tw_out_circ(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, sqrt(1.0 - (x - 1.0) * (x - 1.0))); }
+static int tw_in_out_circ(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? (1.0 - sqrt(1.0 - pow(2.0 * x, 2.0))) / 2.0 : (sqrt(1.0 - pow(-2.0 * x + 2.0, 2.0)) + 1.0) / 2.0); }
+static int tw_out_in_circ(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * sqrt(1.0 - pow(2.0 * x - 1.0, 2.0)) : 0.5 + 0.5 * (1.0 - sqrt(1.0 - pow(2.0 * x - 1.0, 2.0)))); }
+static int tw_in_back(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 2.70158 * pow(x, 3.0) - 1.70158 * x * x); }
+static int tw_out_back(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 + 2.70158 * pow(x - 1.0, 3.0) + 1.70158 * pow(x - 1.0, 2.0)); }
+static int tw_in_out_back(lua_State *L) { double x = smlua_wiiu_num(L, 1); double c = 1.70158 * 1.525; return tw_push(L, x < 0.5 ? (pow(2.0 * x, 2.0) * ((c + 1.0) * 2.0 * x - c)) / 2.0 : (pow(2.0 * x - 2.0, 2.0) * ((c + 1.0) * (x * 2.0 - 2.0) + c) + 2.0) / 2.0); }
+static int tw_out_in_back(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * (1.0 + 2.70158 * pow(2.0 * x - 1.0, 3.0) + 1.70158 * pow(2.0 * x - 1.0, 2.0)) : 0.5 + 0.5 * (2.70158 * pow(2.0 * x - 1.0, 3.0) - 1.70158 * pow(2.0 * x - 1.0, 2.0))); }
+static int tw_in_elastic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, (x == 0.0 || x == 1.0) ? x : -pow(2.0, 10.0 * x - 10.0) * sin((x * 10.0 - 10.75) * ((2.0 * WIIU_LUA_PI) / 3.0))); }
+static int tw_out_elastic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, (x == 0.0 || x == 1.0) ? x : pow(2.0, -10.0 * x) * sin((x * 10.0 - 0.75) * ((2.0 * WIIU_LUA_PI) / 3.0)) + 1.0); }
+static int tw_in_out_elastic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, (x == 0.0 || x == 1.0) ? x : (x < 0.5 ? -0.5 * pow(2.0, 20.0 * x - 10.0) * sin((20.0 * x - 11.125) * ((2.0 * WIIU_LUA_PI) / 4.5)) : 0.5 * pow(2.0, -20.0 * x + 10.0) * sin((20.0 * x - 11.125) * ((2.0 * WIIU_LUA_PI) / 4.5)) + 1.0)); }
+static int tw_out_in_elastic(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, (x == 0.0 || x == 1.0) ? x : (x < 0.5 ? 0.5 * (pow(2.0, -10.0 * (x * 2.0)) * sin(((x * 2.0) * 10.0 - 0.75) * ((2.0 * WIIU_LUA_PI) / 3.0)) + 1.0) : 0.5 + 0.5 * (-pow(2.0, 10.0 * ((x - 0.5) * 2.0) - 10.0) * sin((((x - 0.5) * 2.0) * 10.0 - 10.75) * ((2.0 * WIIU_LUA_PI) / 3.0))))); }
+static int tw_in_bounce(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, 1.0 - tw_out_bounce(1.0 - x)); }
+static int tw_out_bounce_lua(lua_State *L) { return tw_push(L, tw_out_bounce(smlua_wiiu_num(L, 1))); }
+static int tw_in_out_bounce(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? (1.0 - tw_out_bounce(1.0 - 2.0 * x)) / 2.0 : (1.0 + tw_out_bounce(2.0 * x - 1.0)) / 2.0); }
+static int tw_out_in_bounce(lua_State *L) { double x = smlua_wiiu_num(L, 1); return tw_push(L, x < 0.5 ? 0.5 * tw_out_bounce(x * 2.0) : 0.5 + 0.5 * (1.0 - tw_out_bounce(1.0 - (2.0 * x - 1.0)))); }
+
+static int smlua_math_tween(lua_State *L) {
+    double a = smlua_wiiu_num(L, 2), b = smlua_wiiu_num(L, 3), x = smlua_wiiu_num(L, 4);
+    double t;
+    if (lua_isfunction(L, 1)) {
+        lua_pushvalue(L, 1);
+        lua_pushnumber(L, x);
+        lua_call(L, 1, 1);
+        t = luaL_checknumber(L, -1);
+    } else {
+        t = smlua_wiiu_num(L, 1);
+    }
+    return smlua_wiiu_push_num(L, a + t * (b - a));
+}
+
+void smlua_bind_wiiu_builtin_helpers(void) {
+    lua_State *L = gLuaState;
+
+    smlua_bind_function(L, "SOUND_ARG_LOAD", smlua_func_SOUND_ARG_LOAD);
+    smlua_bind_function(L, "network_player_get_palette_color", smlua_func_network_player_get_palette_color);
+    smlua_bind_function(L, "network_player_get_override_palette_color", smlua_func_network_player_get_override_palette_color);
+
+    smlua_wiiu_set_math_function(L, "sqr", smlua_math_sqr);
+    smlua_wiiu_set_math_function(L, "clamp", smlua_math_clamp);
+    smlua_wiiu_set_math_function(L, "hypot", smlua_math_hypot);
+    smlua_wiiu_set_math_function(L, "sign", smlua_math_sign);
+    smlua_wiiu_set_math_function(L, "sign0", smlua_math_sign0);
+    smlua_wiiu_set_math_function(L, "lerp", smlua_math_lerp);
+    smlua_wiiu_set_math_function(L, "invlerp", smlua_math_invlerp);
+    smlua_wiiu_set_math_function(L, "remap", smlua_math_remap);
+    smlua_wiiu_set_math_function(L, "round", smlua_math_round);
+    smlua_wiiu_set_math_function(L, "tween", smlua_math_tween);
+    smlua_wiiu_set_math_function(L, "s8", smlua_math_s8);
+    smlua_wiiu_set_math_function(L, "s16", smlua_math_s16);
+    smlua_wiiu_set_math_function(L, "s32", smlua_math_s32);
+    smlua_wiiu_set_math_function(L, "u8", smlua_math_u8);
+    smlua_wiiu_set_math_function(L, "u16", smlua_math_u16);
+    smlua_wiiu_set_math_function(L, "u32", smlua_math_u32);
+
+    smlua_wiiu_set_global_function(L, "IN_SINE", tw_in_sine);
+    smlua_wiiu_set_global_function(L, "OUT_SINE", tw_out_sine);
+    smlua_wiiu_set_global_function(L, "IN_OUT_SINE", tw_in_out_sine);
+    smlua_wiiu_set_global_function(L, "OUT_IN_SINE", tw_out_in_sine);
+    smlua_wiiu_set_global_function(L, "IN_QUAD", tw_in_quad);
+    smlua_wiiu_set_global_function(L, "OUT_QUAD", tw_out_quad);
+    smlua_wiiu_set_global_function(L, "IN_OUT_QUAD", tw_in_out_quad);
+    smlua_wiiu_set_global_function(L, "OUT_IN_QUAD", tw_out_in_quad);
+    smlua_wiiu_set_global_function(L, "IN_CUBIC", tw_in_cubic);
+    smlua_wiiu_set_global_function(L, "OUT_CUBIC", tw_out_cubic);
+    smlua_wiiu_set_global_function(L, "IN_OUT_CUBIC", tw_in_out_cubic);
+    smlua_wiiu_set_global_function(L, "OUT_IN_CUBIC", tw_out_in_cubic);
+    smlua_wiiu_set_global_function(L, "IN_QUART", tw_in_quart);
+    smlua_wiiu_set_global_function(L, "OUT_QUART", tw_out_quart);
+    smlua_wiiu_set_global_function(L, "IN_OUT_QUART", tw_in_out_quart);
+    smlua_wiiu_set_global_function(L, "OUT_IN_QUART", tw_out_in_quart);
+    smlua_wiiu_set_global_function(L, "IN_QUINT", tw_in_quint);
+    smlua_wiiu_set_global_function(L, "OUT_QUINT", tw_out_quint);
+    smlua_wiiu_set_global_function(L, "IN_OUT_QUINT", tw_in_out_quint);
+    smlua_wiiu_set_global_function(L, "OUT_IN_QUINT", tw_out_in_quint);
+    smlua_wiiu_set_global_function(L, "IN_EXPO", tw_in_expo);
+    smlua_wiiu_set_global_function(L, "OUT_EXPO", tw_out_expo);
+    smlua_wiiu_set_global_function(L, "IN_OUT_EXPO", tw_in_out_expo);
+    smlua_wiiu_set_global_function(L, "OUT_IN_EXPO", tw_out_in_expo);
+    smlua_wiiu_set_global_function(L, "IN_CIRC", tw_in_circ);
+    smlua_wiiu_set_global_function(L, "OUT_CIRC", tw_out_circ);
+    smlua_wiiu_set_global_function(L, "IN_OUT_CIRC", tw_in_out_circ);
+    smlua_wiiu_set_global_function(L, "OUT_IN_CIRC", tw_out_in_circ);
+    smlua_wiiu_set_global_function(L, "IN_BACK", tw_in_back);
+    smlua_wiiu_set_global_function(L, "OUT_BACK", tw_out_back);
+    smlua_wiiu_set_global_function(L, "IN_OUT_BACK", tw_in_out_back);
+    smlua_wiiu_set_global_function(L, "OUT_IN_BACK", tw_out_in_back);
+    smlua_wiiu_set_global_function(L, "IN_ELASTIC", tw_in_elastic);
+    smlua_wiiu_set_global_function(L, "OUT_ELASTIC", tw_out_elastic);
+    smlua_wiiu_set_global_function(L, "IN_OUT_ELASTIC", tw_in_out_elastic);
+    smlua_wiiu_set_global_function(L, "OUT_IN_ELASTIC", tw_out_in_elastic);
+    smlua_wiiu_set_global_function(L, "IN_BOUNCE", tw_in_bounce);
+    smlua_wiiu_set_global_function(L, "OUT_BOUNCE", tw_out_bounce_lua);
+    smlua_wiiu_set_global_function(L, "IN_OUT_BOUNCE", tw_in_out_bounce);
+    smlua_wiiu_set_global_function(L, "OUT_IN_BOUNCE", tw_out_in_bounce);
+}
+
+static void smlua_wiiu_set_number_field(lua_State *L, const char *key, double value) {
+    lua_pushnumber(L, value);
+    lua_setfield(L, -2, key);
+}
+
+static void smlua_wiiu_finish_read_only_global(lua_State *L, const char *name) {
+    int rawIndex = lua_gettop(L);
+    lua_newtable(L);
+    int proxyIndex = lua_gettop(L);
+
+    lua_pushvalue(L, rawIndex);
+    lua_setfield(L, proxyIndex, "_table");
+
+    lua_getglobal(L, "_ReadOnlyTable");
+    if (lua_type(L, -1) == LUA_TTABLE) {
+        lua_setmetatable(L, proxyIndex);
+    } else {
+        lua_pop(L, 1);
+    }
+
+    lua_remove(L, rawIndex);
+    lua_setglobal(L, name);
+}
+
+static void smlua_wiiu_bind_vec(lua_State *L, const char *name, double x, double y, double z, double w, int count) {
+    lua_newtable(L);
+    smlua_wiiu_set_number_field(L, "x", x);
+    smlua_wiiu_set_number_field(L, "y", y);
+    if (count >= 3) { smlua_wiiu_set_number_field(L, "z", z); }
+    if (count >= 4) { smlua_wiiu_set_number_field(L, "w", w); }
+    smlua_wiiu_finish_read_only_global(L, name);
+}
+
+static void smlua_wiiu_bind_mat4(lua_State *L, const char *name, const double *m) {
+    static const char *keys[] = {
+        "m00", "m01", "m02", "m03",
+        "m10", "m11", "m12", "m13",
+        "m20", "m21", "m22", "m23",
+        "m30", "m31", "m32", "m33",
+    };
+
+    lua_newtable(L);
+    for (int i = 0; i < 16; i++) {
+        smlua_wiiu_set_number_field(L, keys[i], m[i]);
+    }
+    smlua_wiiu_finish_read_only_global(L, name);
+}
+
+void smlua_bind_wiiu_read_only_constants(void) {
+    lua_State *L = gLuaState;
+    static const double mat4Zero[16] = {
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    };
+    static const double mat4Identity[16] = {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+    };
+    static const double mat4Fullscreen[16] = {
+        0.00625, 0, 0, 0,
+        0, 0.008333333333333333, 0, 0,
+        0, 0, -1, 0,
+        -1, -1, -1, 1,
+    };
+
+    smlua_wiiu_bind_vec(L, "gGlobalSoundSource", 0, 0, 0, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec2fZero", 0, 0, 0, 0, 2);
+    smlua_wiiu_bind_vec(L, "gVec2fOne", 1, 1, 0, 0, 2);
+    smlua_wiiu_bind_vec(L, "gVec3fZero", 0, 0, 0, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec3fOne", 1, 1, 1, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec3fX", 1, 0, 0, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec3fY", 0, 1, 0, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec3fZ", 0, 0, 1, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec4fZero", 0, 0, 0, 0, 4);
+    smlua_wiiu_bind_vec(L, "gVec4fOne", 1, 1, 1, 1, 4);
+    smlua_wiiu_bind_vec(L, "gVec2iZero", 0, 0, 0, 0, 2);
+    smlua_wiiu_bind_vec(L, "gVec2iOne", 1, 1, 0, 0, 2);
+    smlua_wiiu_bind_vec(L, "gVec3iZero", 0, 0, 0, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec3iOne", 1, 1, 1, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec4iZero", 0, 0, 0, 0, 4);
+    smlua_wiiu_bind_vec(L, "gVec4iOne", 1, 1, 1, 1, 4);
+    smlua_wiiu_bind_vec(L, "gVec2sZero", 0, 0, 0, 0, 2);
+    smlua_wiiu_bind_vec(L, "gVec2sOne", 1, 1, 0, 0, 2);
+    smlua_wiiu_bind_vec(L, "gVec3sZero", 0, 0, 0, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec3sOne", 1, 1, 1, 0, 3);
+    smlua_wiiu_bind_vec(L, "gVec4sZero", 0, 0, 0, 0, 4);
+    smlua_wiiu_bind_vec(L, "gVec4sOne", 1, 1, 1, 1, 4);
+    smlua_wiiu_bind_mat4(L, "gMat4Zero", mat4Zero);
+    smlua_wiiu_bind_mat4(L, "gMat4Identity", mat4Identity);
+    smlua_wiiu_bind_mat4(L, "gMat4Fullscreen", mat4Fullscreen);
+}
+#endif
+
   //////////
  // bind //
 //////////
@@ -999,6 +1412,7 @@ void smlua_bind_functions(void) {
     // misc
     smlua_bind_function(L, "table_copy", smlua_func_table_copy);
     smlua_bind_function(L, "table_deepcopy", smlua_func_table_deepcopy);
+    smlua_bind_function(L, "create_read_only_table", smlua_func_create_read_only_table);
     smlua_bind_function(L, "init_mario_after_warp", smlua_func_init_mario_after_warp);
     smlua_bind_function(L, "network_init_object", smlua_func_network_init_object);
     smlua_bind_function(L, "network_send_object", smlua_func_network_send_object);
@@ -1020,4 +1434,26 @@ void smlua_bind_functions(void) {
     smlua_bind_function(L, "cast_graph_node", smlua_func_cast_graph_node);
     smlua_bind_function(L, "get_uncolored_string", smlua_func_get_uncolored_string);
     smlua_bind_function(L, "gfx_set_command", smlua_func_gfx_set_command);
+}
+
+void smlua_bind_table_functions(void) {
+    lua_State* L = gLuaState;
+#if defined(TARGET_WII_U)
+    wiiu_diag_mark("smlua_bind_table_functions: skipped on Wii U");
+    (void)L;
+    return;
+#endif
+    lua_getglobal(L, "table");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
+
+    lua_pushcfunction(L, smlua_func_table_copy);
+    lua_setfield(L, -2, "copy");
+
+    lua_pushcfunction(L, smlua_func_table_deepcopy);
+    lua_setfield(L, -2, "deepcopy");
+
+    lua_pop(L, 1);
 }

@@ -146,6 +146,7 @@ bool mods_generate_remote_base_path(void) {
 }
 
 void mods_activate(struct Mods* mods) {
+    sys_trace("mods_activate: begin entries=%u", mods ? mods->entryCount : 0);
     mods_clear(&gActiveMods);
 
     // count enabled
@@ -168,14 +169,18 @@ void mods_activate(struct Mods* mods) {
     for (int i = 0; i < mods->entryCount; i++) {
         struct Mod* mod = mods->entries[i];
         if (mod->enabled) {
+            sys_trace("mods_activate: mod begin %s", mod->relativePath);
             mod->index = gActiveMods.entryCount;
             gActiveMods.entries[gActiveMods.entryCount++] = mod;
             gActiveMods.size += mod->size;
             mod_activate(mod);
+            sys_trace("mods_activate: mod end %s", mod->relativePath);
         }
     }
 
+    sys_trace("mods_activate: mod_cache_save begin");
     mod_cache_save();
+    sys_trace("mods_activate: end");
 }
 
 static void mods_sort(struct Mods* mods) {

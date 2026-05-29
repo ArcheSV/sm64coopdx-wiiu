@@ -20,6 +20,10 @@
 #include "debuglog.h"
 #include "configfile.h"
 
+#if defined(TARGET_WII_U)
+#include <coreinit/debug.h>
+#endif
+
 /* these are not available on some platforms, so might as well */
 
 char *sys_strlwr(char *src) {
@@ -76,6 +80,83 @@ void sys_swap_backslashes(char* buffer) {
 /* this calls a platform-specific impl function after forming the error message */
 
 static void sys_fatal_impl(const char *msg) __attribute__ ((noreturn));
+const char *sys_user_path(void);
+
+#if defined(TARGET_WII_U)
+static FILE *sWiiuTraceFile = NULL;
+static FILE *sWiiuDiagFile = NULL;
+
+static FILE *wiiu_log_file(FILE **slot, const char *filename, const char *mode) {
+    if (*slot) { return *slot; }
+
+    const char *appPath = sys_user_path();
+    if (!appPath) { return NULL; }
+
+    char path[SYS_MAX_PATH] = { 0 };
+    snprintf(path, SYS_MAX_PATH, "%s/%s", appPath, filename);
+    *slot = fopen(path, mode);
+    return *slot;
+}
+#endif
+
+void sys_trace(const char *fmt, ...) {
+#if defined(TARGET_WII_U) && defined(WIIU_ENABLE_PHASE_TRACE)
+    FILE *f = wiiu_log_file(&sWiiuTraceFile, "wiiu_phase_trace.txt", "a");
+    if (!f) { return; }
+
+    char msg[2048];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+
+    fprintf(f, "%s\n", msg);
+    fflush(f);
+#else
+    (void)fmt;
+#endif
+}
+
+void wiiu_diag_reset(void) {
+#if defined(TARGET_WII_U) && !defined(WIIU_DISABLE_DIAG)
+    if (sWiiuDiagFile) {
+        fclose(sWiiuDiagFile);
+        sWiiuDiagFile = NULL;
+    }
+
+    const char *appPath = sys_user_path();
+    if (!appPath) {
+        OSReport("[sm64coopdxu] wiiu_lua_diag: SD app path unavailable (mount failed?)\n");
+        return;
+    }
+
+    char path[SYS_MAX_PATH] = { 0 };
+    snprintf(path, SYS_MAX_PATH, "%s/wiiu_lua_diag.txt", appPath);
+    FILE *f = fopen(path, "wb");
+    if (f) {
+        fclose(f);
+    } else {
+        OSReport("[sm64coopdxu] wiiu_lua_diag: failed to create %s\n", path);
+    }
+#endif
+}
+
+void wiiu_diag_mark(const char *fmt, ...) {
+#if defined(TARGET_WII_U) && !defined(WIIU_DISABLE_DIAG)
+    FILE *f = wiiu_log_file(&sWiiuDiagFile, "wiiu_lua_diag.txt", "a");
+    if (!f) { return; }
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+
+    fputc('\n', f);
+    fflush(f);
+#else
+    (void)fmt;
+#endif
+}
 
 void sys_fatal(const char *fmt, ...) {
     static char msg[2048];
@@ -308,6 +389,15 @@ static const char *sys_wiiu_app_path(void) {
     if (NULL == sdPath) { return NULL; }
 
     snprintf(path, SYS_MAX_PATH, "%s%s", sdPath, WIIU_APP_DIR);
+#if defined(WIIU_ENABLE_PHASE_TRACE)
+    char tracePath[SYS_MAX_PATH] = { 0 };
+    snprintf(tracePath, SYS_MAX_PATH, "%s/wiiu_phase_trace.txt", path);
+    FILE *f = fopen(tracePath, "a");
+    if (f) {
+        fprintf(f, "sys_wiiu_app_path: mounted %s\n", path);
+        fclose(f);
+    }
+#endif
     return path;
 }
 
@@ -335,6 +425,16 @@ const char *sys_exe_path_file(void) {
 }
 
 static void sys_fatal_impl(const char *msg) {
+    const char *appPath = sys_wiiu_app_path();
+    if (appPath) {
+        char path[SYS_MAX_PATH] = { 0 };
+        snprintf(path, SYS_MAX_PATH, "%s/wiiu_phase_trace.txt", appPath);
+        FILE *f = fopen(path, "a");
+        if (f) {
+            fprintf(f, "FATAL ERROR:\n%s\n", msg);
+            fclose(f);
+        }
+    }
     fprintf(stderr, "FATAL ERROR:\n%s\n", msg);
     fflush(stderr);
     exit(1);

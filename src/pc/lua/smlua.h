@@ -48,6 +48,9 @@ int smlua_pcall(lua_State* L, int nargs, int nresults, int errfunc);
 void smlua_exec_file(const char* path);
 void smlua_exec_str(const char* str);
 int smlua_load_script(struct Mod* mod, struct ModFile* file, u16 remoteIndex, bool isModInit);
+#if defined(TARGET_WII_U)
+bool smlua_wiiu_bind_constant_global_if_exists(lua_State *L, const char *name);
+#endif
 
 void smlua_init(void);
 void smlua_update(void);

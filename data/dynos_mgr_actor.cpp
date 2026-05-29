@@ -37,13 +37,20 @@ bool DynOS_Actor_AddCustom(s32 aModIndex, s32 aModFileIndex, const SysPath &aFil
 
     std::string actorName = aActorName;
 
+    sys_trace("DynOS_Actor_AddCustom: load begin %s %s", aFilename.c_str(), actorName.c_str());
     GfxData *_GfxData = DynOS_Actor_LoadFromBinary(aFilename, actorName.c_str(), aFilename, false);
+    sys_trace("DynOS_Actor_AddCustom: load end %s %s", aFilename.c_str(), actorName.c_str());
     if (!_GfxData) {
         PrintError("  ERROR: Couldn't load Actor Binary \"%s\" from \"%s\"", actorName.c_str(), aFilename.c_str());
         return false;
     }
     _GfxData->mModIndex = aModIndex;
     _GfxData->mModFileIndex = aModFileIndex;
+
+    if (_GfxData->mGeoLayouts.Empty()) {
+        PrintError("  ERROR: Couldn't load geo layout for \"%s\"", actorName.c_str());
+        return false;
+    }
 
     void* geoLayout = (*(_GfxData->mGeoLayouts.end() - 1))->mData;
     if (!geoLayout) {
@@ -56,7 +63,9 @@ bool DynOS_Actor_AddCustom(s32 aModIndex, s32 aModFileIndex, const SysPath &aFil
     ActorGfx actorGfx   = {  };
     actorGfx.mGfxData   = _GfxData;
     actorGfx.mPackIndex = MOD_PACK_INDEX;
+    sys_trace("DynOS_Actor_AddCustom: model load begin %s", actorName.c_str());
     actorGfx.mGraphNode = (GraphNode *) DynOS_Model_LoadGeo(&id, MODEL_POOL_SESSION, geoLayout, true);
+    sys_trace("DynOS_Actor_AddCustom: model load end %s id=%u node=%p", actorName.c_str(), id, actorGfx.mGraphNode);
     if (!actorGfx.mGraphNode) {
         PrintError("  ERROR: Couldn't load graph node for \"%s\"", actorName.c_str());
         return false;

@@ -3,6 +3,7 @@ extern "C" {
 #include "behavior_table.h"
 #include "levels/scripts.h"
 #include "engine/graph_node.h"
+#include "pc/platform.h"
 }
 
   /////////////
@@ -456,30 +457,49 @@ static void *GetPointerFromData(GfxData *aGfxData, const String &aPtrName, u32 a
     }
 
     // Error
+    sys_trace("GetPointerFromData: missing name=%s data=%u", aPtrName.begin(), aPtrData);
     sys_fatal("Pointer not found: %s", aPtrName.begin());
     return NULL;
 }
 
 void *DynOS_Pointer_Load(BinFile *aFile, GfxData *aGfxData, u32 aValue, u8 aFuncType, u8* outFlags) {
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Pointer_Load: begin value=%08X funcType=%u offset=%d", aValue, aFuncType, aFile->Offset());
+#endif
 
     // LUAV
     if (aValue == LUA_VAR_CODE) {
         String token; token.Read(aFile);
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Pointer_Load: LUAV token=%s offset=%d", token.begin(), aFile->Offset());
+#endif
         for (s32 i = 0; i < aGfxData->mLuaTokenList.Count(); i++) {
             if (token == aGfxData->mLuaTokenList[i]) {
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+                sys_trace("DynOS_Pointer_Load: LUAV existing index=%d", i + 1);
+#endif
                 return (void*)(uintptr_t)(i+1);
             }
         }
         u32 index = aGfxData->mLuaTokenList.Count();
         aGfxData->mLuaTokenList.Add(token);
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Pointer_Load: LUAV new index=%u", index + 1);
+#endif
         return (void*)(uintptr_t)(index+1);
     }
 
     // FUNC
     if (aValue == FUNCTION_CODE) {
         s32 _FunctionIndex = aFile->Read<s32>();
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Pointer_Load: FUNC index=%d offset=%d", _FunctionIndex, aFile->Offset());
+#endif
         void *_FunctionPtr = (void*) DynOS_Builtin_Func_GetFromIndex(_FunctionIndex, aFuncType);
         if (_FunctionPtr) {
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+            sys_trace("DynOS_Pointer_Load: FUNC ptr=%p", _FunctionPtr);
+#endif
             return _FunctionPtr;
         }
         String error = DynOS_Builtin_Func_CheckMisuse(_FunctionIndex, aFuncType);
@@ -495,9 +515,19 @@ void *DynOS_Pointer_Load(BinFile *aFile, GfxData *aGfxData, u32 aValue, u8 aFunc
     if (aValue == POINTER_CODE) {
         String _PtrName; _PtrName.Read(aFile);
         u32 _PtrData = aFile->Read<u32>();
-        return GetPointerFromData(aGfxData, _PtrName, _PtrData, outFlags);
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Pointer_Load: PNTR name=%s data=%u offset=%d", _PtrName.begin(), _PtrData, aFile->Offset());
+#endif
+        void *_Ptr = GetPointerFromData(aGfxData, _PtrName, _PtrData, outFlags);
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Pointer_Load: PNTR resolved name=%s ptr=%p flags=%u", _PtrName.begin(), _Ptr, outFlags ? *outFlags : 0);
+#endif
+        return _Ptr;
     }
 
     // Not a pointer
+#if !defined(TARGET_WII_U) || defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Pointer_Load: not pointer value=%08X", aValue);
+#endif
     return NULL;
 }

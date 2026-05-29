@@ -19,7 +19,7 @@ f32* smlua_get_vec4f_from_buffer(void);
 s16* smlua_get_vec4s_from_buffer(void);
 u8* smlua_get_color_from_buffer(void);
 
-void smlua_bind_function(lua_State* L, const char* name, void* func);
+void smlua_bind_function(lua_State* L, const char* name, lua_CFunction func);
 bool smlua_is_table_empty(int index);
 
 bool smlua_to_boolean(lua_State* L, int index);

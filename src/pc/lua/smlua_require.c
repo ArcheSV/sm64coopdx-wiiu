@@ -83,9 +83,13 @@ static struct ModFile* smlua_find_mod_file(const char* moduleName) {
     resolve_relative_path(basePath, moduleName, absolutePath);
 
     char luaName[SYS_MAX_PATH] = "";
+#if !defined(TARGET_WII_U)
     char luacName[SYS_MAX_PATH] = "";
+#endif
     snprintf(luaName, SYS_MAX_PATH, "%s.lua", absolutePath);
+#if !defined(TARGET_WII_U)
     snprintf(luacName, SYS_MAX_PATH, "%s.luac", absolutePath);
+#endif
 
     // since mods' relativePaths are relative to the mod's root, we can do a direct comparison
     for (int i = 0; i < gLuaActiveMod->fileCount; i++) {
@@ -97,14 +101,24 @@ static struct ModFile* smlua_find_mod_file(const char* moduleName) {
         }
 
         // only consider lua files
+#if defined(TARGET_WII_U)
+        if (!path_ends_with(file->relativePath, ".lua")) {
+            continue;
+        }
+#else
         if (!path_ends_with(file->relativePath, ".lua") && !path_ends_with(file->relativePath, ".luac")) {
             continue;
         }
+#endif
 
         // check for match, normalizing to system separators
         strcpy(normalizedRelative, file->relativePath);
         normalize_path(normalizedRelative);
+#if defined(TARGET_WII_U)
+        if (!strcmp(normalizedRelative, luaName)) {
+#else
         if (!strcmp(normalizedRelative, luaName) || !strcmp(normalizedRelative, luacName)) {
+#endif
             return file;
         }
     }
@@ -174,6 +188,12 @@ void smlua_init_require_system(void) {
 
     // initialize the custom require function
     smlua_bind_custom_require(L);
+
+#if defined(TARGET_WII_U)
+    // Wii U: create per-mod loaded tables lazily. Precreating them during
+    // Lua startup has proven fragile on Cemu/WUT after large global binding.
+    return;
+#endif
 
     // initialize loaded tables for each mod
     for (int i = 0; i < gActiveMods.entryCount; i++) {

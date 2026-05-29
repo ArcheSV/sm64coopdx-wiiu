@@ -1,6 +1,7 @@
 #include "smlua.h"
 #include "pc/mods/mods.h"
 #include "audio/external.h"
+#include "pc/platform.h"
 
 u8 gSmLuaConvertSuccess = false;
 
@@ -66,9 +67,19 @@ f32 *smlua_get_vec3f_for_play_sound(f32 *pos) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-void smlua_bind_function(lua_State* L, const char* name, void* func) {
+void smlua_bind_function(lua_State* L, const char* name, lua_CFunction func) {
+#if defined(TARGET_WII_U) && defined(WIIU_VERBOSE_LUA_BIND_TRACE)
+    static u32 sBindTraceCount = 0;
+    u32 bindTraceIndex = sBindTraceCount++;
+    sys_trace("smlua_bind_function: begin %u %s top=%d", bindTraceIndex, name ? name : "<null>", lua_gettop(L));
+    wiiu_diag_mark("smlua_bind_function: begin %u %s top=%d", bindTraceIndex, name ? name : "<null>", lua_gettop(L));
+#endif
     lua_pushcfunction(L, func);
     lua_setglobal(L, name);
+#if defined(TARGET_WII_U) && defined(WIIU_VERBOSE_LUA_BIND_TRACE)
+    sys_trace("smlua_bind_function: end %u %s top=%d", bindTraceIndex, name ? name : "<null>", lua_gettop(L));
+    wiiu_diag_mark("smlua_bind_function: end %u %s top=%d", bindTraceIndex, name ? name : "<null>", lua_gettop(L));
+#endif
 }
 
 bool smlua_is_table_empty(int index) {
@@ -185,7 +196,25 @@ void* smlua_to_cobject(lua_State* L, int index, u16 lot) {
         return NULL;
     }
 
+#if defined(TARGET_WII_U)
+    CObject *cobject = lua_touserdata(L, index);
+    int absIndex = lua_absindex(L, index);
+    if (!lua_getmetatable(L, absIndex)) {
+        LOG_LUA_LINE("smlua_to_cobject received userdata without metatable.");
+        gSmLuaConvertSuccess = false;
+        return NULL;
+    }
+    lua_rawgeti(L, LUA_REGISTRYINDEX, gSmLuaCObjectMetatable);
+    bool metatableMatch = lua_rawequal(L, -1, -2);
+    lua_pop(L, 2);
+    if (!metatableMatch) {
+        LOG_LUA_LINE("smlua_to_cobject received userdata with improper metatable.");
+        gSmLuaConvertSuccess = false;
+        return NULL;
+    }
+#else
     CObject *cobject = luaL_checkudata(L, index, "CObject");
+#endif
 
     if (lot != cobject->lot) {
         LOG_LUA_LINE("smlua_to_cobject received improper LOT. Expected '%s', received '%s'", smlua_get_lot_name(lot), smlua_get_lot_name(cobject->lot));
@@ -218,7 +247,25 @@ void* smlua_to_cpointer(lua_State* L, int index, u16 lvt) {
         return NULL;
     }
 
+#if defined(TARGET_WII_U)
+    CPointer *cpointer = lua_touserdata(L, index);
+    int absIndex = lua_absindex(L, index);
+    if (!lua_getmetatable(L, absIndex)) {
+        LOG_LUA_LINE("smlua_to_cpointer received userdata without metatable.");
+        gSmLuaConvertSuccess = false;
+        return NULL;
+    }
+    lua_rawgeti(L, LUA_REGISTRYINDEX, gSmLuaCPointerMetatable);
+    bool metatableMatch = lua_rawequal(L, -1, -2);
+    lua_pop(L, 2);
+    if (!metatableMatch) {
+        LOG_LUA_LINE("smlua_to_cpointer received userdata with improper metatable.");
+        gSmLuaConvertSuccess = false;
+        return NULL;
+    }
+#else
     CPointer *cpointer = luaL_checkudata(L, index, "CPointer");
+#endif
 
     if (lvt != cpointer->lvt) {
         LOG_LUA_LINE("smlua_to_cpointer received improper LVT. Expected '%s', received '%s'", smlua_get_lvt_name(lvt), smlua_get_lvt_name(cpointer->lvt));
@@ -457,7 +504,7 @@ CPointer *smlua_push_pointer(lua_State* L, u16 lvt, void* p, void *extraInfo) {
     lua_pushinteger(L, key);
     lua_gettable(L, -2);
     if (lua_isuserdata(L, -1)) {
-        CPointer *cptr = lua_touserdata(L, 1);
+        CPointer *cptr = lua_touserdata(L, -1);
         if (cptr && cptr->lvt == lvt && cptr->pointer == p) {
             lua_remove(L, -2); // Remove gSmLuaCPointers table
             return cptr;

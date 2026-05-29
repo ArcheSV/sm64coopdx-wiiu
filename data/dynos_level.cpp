@@ -6,6 +6,7 @@ extern "C" {
 #include "pc/lua/utils/smlua_level_utils.h"
 #include "game/area.h"
 #include "game/level_update.h"
+#include "pc/platform.h"
 }
 
 //
@@ -59,6 +60,13 @@ u64 DynOS_Level_CmdGet(void *aCmd, u64 aOffset) {
     return value;
 }
 
+uintptr_t DynOS_Level_CmdGetPtr(void *aCmd, u64 aOffset) {
+    u64 _Offset = (((aOffset) & 3llu) | (((aOffset) & ~3llu) << (sizeof(void *) >> 3llu)));
+    uintptr_t value = 0;
+    memcpy(&value, (void *) ((uintptr_t) aCmd + _Offset), sizeof(value));
+    return value;
+}
+
 LvlCmd *DynOS_Level_CmdNext(LvlCmd *aCmd) {
     u64 aCmdSize = aCmd->mSize;
     u64 _Offset = (((aCmdSize) & 3llu) | (((aCmdSize) & ~3llu) << (sizeof(void *) >> 3llu)));
@@ -96,7 +104,7 @@ static s32 DynOS_Level_PreprocessScript(u8 aType, void *aCmd) {
 
         // OBJECT
         case 0x24: {
-            const BehaviorScript *bhv = (const BehaviorScript *) DynOS_Level_CmdGet(aCmd, 20);
+            const BehaviorScript *bhv = (const BehaviorScript *) DynOS_Level_CmdGetPtr(aCmd, 20);
             for (s32 i = 0; i < 20; ++i) {
                 if (sWarpBhvSpawnTable[i] == bhv) {
                     DynosWarp *_Warp = DynOS_Level_GetWarpStruct(((((u32) DynOS_Level_CmdGet(aCmd, 16)) >> 16) & 0xFF));
@@ -144,7 +152,7 @@ static s32 DynOS_Level_PreprocessScript(u8 aType, void *aCmd) {
 
         // TERRAIN
         case 0x2E: {
-            sDynosLevelCollision[sDynosCurrentLevelNum][sDynosAreaIndex] = (Collision*) DynOS_Level_CmdGet(aCmd, 4);
+            sDynosLevelCollision[sDynosCurrentLevelNum][sDynosAreaIndex] = (Collision*) DynOS_Level_CmdGetPtr(aCmd, 4);
         } break;
     }
 
@@ -179,16 +187,21 @@ s8 DynOS_Level_GetCourse(s32 aLevel) {
 }
 
 void DynOS_Level_Override(void* originalScript, void* newScript, s32 modIndex) {
+    sys_trace("DynOS_Level_Override: begin original=%p new=%p mod=%d", originalScript, newScript, modIndex);
     for (s32 i = 0; i < LEVEL_COUNT; i++) {
         if (sDynosLevelScripts[i].mLevelScript == originalScript) {
             sDynosCurrentLevelNum = i;
             sDynosLevelWarps[i].Clear();
+            sys_trace("DynOS_Level_Override: parse begin level=%d", i);
             DynOS_Level_ParseScript(newScript, DynOS_Level_PreprocessScript);
+            sys_trace("DynOS_Level_Override: parse end level=%d", i);
             sDynosLevelScripts[i].mLevelScript = newScript;
             sDynosLevelScripts[i].mModIndex = modIndex;
+            sys_trace("DynOS_Level_Override: end level=%d", i);
             return;
         }
     }
+    sys_trace("DynOS_Level_Override: original not found original=%p", originalScript);
 }
 
 void DynOS_Level_Unoverride() {
@@ -277,12 +290,20 @@ static LvlCmd *DynOS_Level_CmdExecute(Stack &aStack, LvlCmd *aCmd) {
     StackPush(aStack, DynOS_Level_CmdNext(aCmd));
     StackPush(aStack, aStack.mBaseIndex);
     aStack.mBaseIndex = aStack.mTopIndex;
-    return (LvlCmd *) DynOS_Level_CmdGet(aCmd, 12);
+    LvlCmd *_Target = (LvlCmd *) DynOS_Level_CmdGetPtr(aCmd, 12);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdExecute: cmd=%p target=%p", aCmd, _Target);
+#endif
+    return _Target;
 }
 
 static LvlCmd *DynOS_Level_CmdExitAndExecute(Stack &aStack, LvlCmd *aCmd) {
     aStack.mTopIndex = aStack.mBaseIndex;
-    return (LvlCmd *) DynOS_Level_CmdGet(aCmd, 12);
+    LvlCmd *_Target = (LvlCmd *) DynOS_Level_CmdGetPtr(aCmd, 12);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdExitAndExecute: cmd=%p target=%p", aCmd, _Target);
+#endif
+    return _Target;
 }
 
 static LvlCmd *DynOS_Level_CmdExit(Stack &aStack, LvlCmd *aCmd) {
@@ -292,12 +313,20 @@ static LvlCmd *DynOS_Level_CmdExit(Stack &aStack, LvlCmd *aCmd) {
 }
 
 static LvlCmd *DynOS_Level_CmdJump(Stack &aStack, LvlCmd *aCmd) {
-    return (LvlCmd *) DynOS_Level_CmdGet(aCmd, 4);
+    LvlCmd *_Target = (LvlCmd *) DynOS_Level_CmdGetPtr(aCmd, 4);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdJump: cmd=%p target=%p", aCmd, _Target);
+#endif
+    return _Target;
 }
 
 static LvlCmd *DynOS_Level_CmdJumpLink(Stack &aStack, LvlCmd *aCmd) {
     StackPush(aStack, DynOS_Level_CmdNext(aCmd));
-    return (LvlCmd *) DynOS_Level_CmdGet(aCmd, 4);
+    LvlCmd *_Target = (LvlCmd *) DynOS_Level_CmdGetPtr(aCmd, 4);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdJumpLink: cmd=%p target=%p", aCmd, _Target);
+#endif
+    return _Target;
 }
 
 static LvlCmd *DynOS_Level_CmdReturn(Stack &aStack, UNUSED LvlCmd *aCmd) {
@@ -328,26 +357,48 @@ static LvlCmd *DynOS_Level_CmdLoopUntil(Stack &aStack, LvlCmd *aCmd) {
 
 static LvlCmd *DynOS_Level_CmdJumpIf(Stack &aStack, LvlCmd *aCmd) {
     StackPush(aStack, DynOS_Level_CmdNext(aCmd)); /* Not an error, that's intentional */
-    return (LvlCmd *) DynOS_Level_CmdGet(aCmd, 8);
+    LvlCmd *_Target = (LvlCmd *) DynOS_Level_CmdGetPtr(aCmd, 8);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdJumpIf: cmd=%p target=%p", aCmd, _Target);
+#endif
+    return _Target;
 }
 
 static LvlCmd *DynOS_Level_CmdJumpLinkIf(Stack &aStack, LvlCmd *aCmd) {
     StackPush(aStack, DynOS_Level_CmdNext(aCmd));
-    return (LvlCmd *) DynOS_Level_CmdGet(aCmd, 8);
+    LvlCmd *_Target = (LvlCmd *) DynOS_Level_CmdGetPtr(aCmd, 8);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdJumpLinkIf: cmd=%p target=%p", aCmd, _Target);
+#endif
+    return _Target;
 }
 
 static LvlCmd *DynOS_Level_CmdJumpArea(Stack &aStack, LvlCmd *aCmd, s32 (*aPreprocessFunction)(u8, void *)) {
-    DynOS_Level_ParseScript((const void *) DynOS_Level_CmdGet(aCmd, 8), aPreprocessFunction);
+    const void *_Target = (const void *) DynOS_Level_CmdGetPtr(aCmd, 8);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_CmdJumpArea: cmd=%p target=%p", aCmd, _Target);
+#endif
+    DynOS_Level_ParseScript(_Target, aPreprocessFunction);
     return DynOS_Level_CmdNext(aCmd);
 }
 
 void DynOS_Level_ParseScript(const void *aScript, s32 (*aPreprocessFunction)(u8, void *)) {
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_ParseScript: begin script=%p", aScript);
+#endif
     Stack _Stack;
     _Stack.mBaseIndex = -1;
     _Stack.mTopIndex = 0;
+    u32 _Step = 0;
     for (LvlCmd *_Cmd = (LvlCmd *) aScript; _Cmd != NULL;) {
         u8 _CmdType = (_Cmd->mType & 0xFF);
         s32 _Action = aPreprocessFunction(_CmdType, (void *) _Cmd);
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Level_ParseScript: cmd script=%p step=%u cmd=%p type=%02X size=%u action=%d stackTop=%d base=%d",
+                  aScript, _Step++, _Cmd, _CmdType, _Cmd->mSize, _Action, _Stack.mTopIndex, _Stack.mBaseIndex);
+#else
+        _Step++;
+#endif
         switch (_Action) {
             case 0:
                 switch (_CmdType) {
@@ -379,9 +430,15 @@ void DynOS_Level_ParseScript(const void *aScript, s32 (*aPreprocessFunction)(u8,
                 break;
 
             case 3:
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+                sys_trace("DynOS_Level_ParseScript: end action=3 script=%p steps=%u", aScript, _Step);
+#endif
                 return;
         }
     }
+#if defined(WIIU_VERBOSE_DYNOS_TRACE)
+    sys_trace("DynOS_Level_ParseScript: end null script=%p steps=%u", aScript, _Step);
+#endif
 }
 
 //

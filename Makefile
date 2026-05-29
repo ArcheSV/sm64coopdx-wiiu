@@ -893,8 +893,8 @@ DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES)
 CC_CHECK := $(CC)
 
 ifeq ($(TARGET_WII_U),1)
-  CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DTARGET_WII_U -D__WIIU__ -D__WUT__ -ffunction-sections -ffast-math
-  CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DTARGET_WII_U -D__WIIU__ -D__WUT__ -DLUA_32BITS -ffunction-sections -ffast-math
+  CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DTARGET_WII_U -D__WIIU__ -D__WUT__ -ffunction-sections
+  CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DTARGET_WII_U -D__WIIU__ -D__WUT__ -DLUA_32BITS -ffunction-sections $(WIIU_EXTRA_CFLAGS)
 else ifeq ($(WINDOWS_BUILD),1)
   CC_CHECK_CFLAGS := -fsyntax-only -fsigned-char $(BACKEND_CFLAGS) $(DEF_INC_CFLAGS) -Wall -Wextra $(TARGET_CFLAGS) -DWINSOCK
   CFLAGS := $(OPT_FLAGS) $(DEF_INC_CFLAGS) $(BACKEND_CFLAGS) $(TARGET_CFLAGS) -fno-strict-aliasing -fwrapv -DWINSOCK
@@ -1156,6 +1156,11 @@ endif
 ifeq ($(TARGET_WII_U),1)
   CC_CHECK_CFLAGS += -DTARGET_WII_U
   CFLAGS += -DTARGET_WII_U
+  # wiiu_lua_diag.txt on SD under /wiiu/apps/sm64coopdxu/ (see platform.c). Set WIIU_DISABLE_DIAG=1 to strip.
+  ifneq ($(WIIU_DISABLE_DIAG),1)
+    CC_CHECK_CFLAGS += -DWIIU_ENABLE_DIAG
+    CFLAGS += -DWIIU_ENABLE_DIAG
+  endif
 endif
 
 # Check for texture fix option

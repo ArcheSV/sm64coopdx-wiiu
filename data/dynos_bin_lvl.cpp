@@ -11,6 +11,7 @@ extern "C" {
 #include "levels/scripts.h"
 #include "levels/menu/header.h"
 #include "game/area.h"
+#include "pc/platform.h"
 }
 
 // Free data pointers, but keep nodes and tokens intact
@@ -924,6 +925,162 @@ static DataNode<LevelScript> *GetLevelScript(GfxData *aGfxData, const String& aG
     return NULL;
 }
 
+#if defined(TARGET_WII_U)
+enum LvlWordType {
+    LVL_WORD_BBBB,
+    LVL_WORD_BBH,
+    LVL_WORD_HH,
+    LVL_WORD_W,
+};
+
+static bool DynOS_Lvl_FirstWordIsBBBB(u8 aCommand) {
+    switch (aCommand) {
+        case 0x0B:
+        case 0x0C:
+        case 0x0D:
+        case 0x0E:
+        case 0x1F:
+        case 0x24:
+        case 0x25:
+        case 0x26:
+        case 0x27:
+        case 0x28:
+        case 0x29:
+        case 0x2A:
+        case 0x2B:
+        case 0x30:
+        case 0x33:
+        case 0x34:
+        case 0x35:
+        case 0x3B:
+        case 0x3C:
+        case 0x3F:
+        case 0x40:
+        case 0x42:
+        case 0x44:
+            return true;
+    }
+    return false;
+}
+
+static LvlWordType DynOS_Lvl_GetWordType(u8 aCommand, u8 aWordIndex) {
+    if (aWordIndex == 0) {
+        return DynOS_Lvl_FirstWordIsBBBB(aCommand) ? LVL_WORD_BBBB : LVL_WORD_BBH;
+    }
+
+    switch (aCommand) {
+        case 0x00:
+        case 0x01:
+            return LVL_WORD_W;
+
+        case 0x05:
+        case 0x06:
+        case 0x11:
+        case 0x12:
+        case 0x16:
+        case 0x17:
+        case 0x18:
+        case 0x1A:
+        case 0x21:
+        case 0x22:
+        case 0x2E:
+        case 0x2F:
+        case 0x39:
+        case 0x41:
+            return LVL_WORD_W;
+
+        case 0x0B:
+            return aWordIndex == 1 ? LVL_WORD_W : LVL_WORD_BBBB;
+
+        case 0x0C:
+        case 0x0D:
+        case 0x42:
+            return (aWordIndex == 1 || aWordIndex == 2) ? LVL_WORD_W : LVL_WORD_BBBB;
+
+        case 0x25:
+            return (aWordIndex == 1 || aWordIndex == 2) ? LVL_WORD_W : LVL_WORD_BBBB;
+
+        case 0x24:
+        case 0x3F:
+            if (aWordIndex >= 1 && aWordIndex <= 3) { return LVL_WORD_HH; }
+            return (aWordIndex == 4 || aWordIndex == 5) ? LVL_WORD_W : LVL_WORD_BBBB;
+
+        case 0x40:
+            if (aWordIndex >= 1 && aWordIndex <= 3) { return LVL_WORD_HH; }
+            return (aWordIndex >= 4 && aWordIndex <= 6) ? LVL_WORD_W : LVL_WORD_BBBB;
+
+        case 0x43:
+            return aWordIndex >= 1 ? LVL_WORD_W : LVL_WORD_BBH;
+
+        case 0x44:
+            return (aWordIndex == 1 || aWordIndex == 2) ? LVL_WORD_W : LVL_WORD_BBBB;
+
+        case 0x26:
+        case 0x27:
+        case 0x33:
+            return LVL_WORD_BBBB;
+
+        case 0x28:
+        case 0x2B:
+        case 0x3A:
+        case 0x3B:
+            return LVL_WORD_HH;
+
+        case 0x36:
+            return LVL_WORD_HH;
+    }
+
+    return LVL_WORD_BBBB;
+}
+
+static u16 DynOS_Lvl_ReadU16LE(const u8 *aBytes) {
+    return (u16) (aBytes[0] | (aBytes[1] << 8));
+}
+
+static u32 DynOS_Lvl_ReadU32LE(const u8 *aBytes) {
+    return (u32) aBytes[0] | ((u32) aBytes[1] << 8) | ((u32) aBytes[2] << 16) | ((u32) aBytes[3] << 24);
+}
+
+static u32 DynOS_Lvl_MakeWord(const u8 *aBytes, LvlWordType aType) {
+    switch (aType) {
+        case LVL_WORD_BBH:
+            return (u32) CMD_BBH(aBytes[0], aBytes[1], DynOS_Lvl_ReadU16LE(aBytes + 2));
+        case LVL_WORD_HH:
+            return (u32) CMD_HH(DynOS_Lvl_ReadU16LE(aBytes), DynOS_Lvl_ReadU16LE(aBytes + 2));
+        case LVL_WORD_W:
+            return (u32) CMD_W(DynOS_Lvl_ReadU32LE(aBytes));
+        case LVL_WORD_BBBB:
+        default:
+            return (u32) CMD_BBBB(aBytes[0], aBytes[1], aBytes[2], aBytes[3]);
+    }
+}
+#endif
+
+static const char *DynOS_Lvl_DataTypeName(u8 aType) {
+    switch (aType) {
+        case DATA_TYPE_LIGHT:           return "LIGHT";
+        case DATA_TYPE_LIGHT_0:         return "LIGHT_0";
+        case DATA_TYPE_LIGHT_T:         return "LIGHT_T";
+        case DATA_TYPE_AMBIENT_T:       return "AMBIENT_T";
+        case DATA_TYPE_TEXTURE:         return "TEXTURE";
+        case DATA_TYPE_TEXTURE_LIST:    return "TEXTURE_LIST";
+        case DATA_TYPE_VERTEX:          return "VERTEX";
+        case DATA_TYPE_DISPLAY_LIST:    return "DISPLAY_LIST";
+        case DATA_TYPE_GEO_LAYOUT:      return "GEO_LAYOUT";
+        case DATA_TYPE_ANIMATION:       return "ANIMATION";
+        case DATA_TYPE_ANIMATION_TABLE: return "ANIMATION_TABLE";
+        case DATA_TYPE_GFXDYNCMD:       return "GFXDYNCMD";
+        case DATA_TYPE_COLLISION:       return "COLLISION";
+        case DATA_TYPE_LEVEL_SCRIPT:    return "LEVEL_SCRIPT";
+        case DATA_TYPE_MACRO_OBJECT:    return "MACRO_OBJECT";
+        case DATA_TYPE_TRAJECTORY:      return "TRAJECTORY";
+        case DATA_TYPE_MOVTEX:          return "MOVTEX";
+        case DATA_TYPE_MOVTEXQC:        return "MOVTEXQC";
+        case DATA_TYPE_ROOMS:           return "ROOMS";
+        default:                        return "UNKNOWN";
+    }
+}
+
   /////////////
  // Writing //
 /////////////
@@ -1051,10 +1208,12 @@ static DataNode<LevelScript>* DynOS_Lvl_Load(BinFile *aFile, GfxData *aGfxData) 
 
     // Name
     _Node->mName.Read(aFile);
+    sys_trace("DynOS_Lvl_Load: begin name=%s offset=%d", _Node->mName.begin(), aFile->Offset());
 
     // Data
     _Node->mSize = aFile->Read<u32>();
     _Node->mData = New<LevelScript>(_Node->mSize);
+    sys_trace("DynOS_Lvl_Load: size name=%s words=%u offset=%d", _Node->mName.begin(), _Node->mSize, aFile->Offset());
 
     // Add it
     if (aGfxData != NULL) {
@@ -1064,20 +1223,50 @@ static DataNode<LevelScript>* DynOS_Lvl_Load(BinFile *aFile, GfxData *aGfxData) 
     DynOS_Lvl_Validate_Begin();
 
     // Read it
+#if defined(TARGET_WII_U)
+    u8 _CmdId = 0xFF;
+    u8 _CmdWordIndex = 0;
+    u8 _CmdWordCount = 0;
+#endif
     for (u32 i = 0; i != _Node->mSize; ++i) {
+#if defined(TARGET_WII_U)
+        u8 _Bytes[4] = { 0 };
+        aFile->Read<u8>(_Bytes, sizeof(_Bytes));
+        if (_CmdWordIndex >= _CmdWordCount) {
+            _CmdId = _Bytes[0];
+            _CmdWordCount = _Bytes[1] / sizeof(u32);
+            if (_CmdWordCount == 0) { _CmdWordCount = 1; }
+            _CmdWordIndex = 0;
+        }
+        u32 _SerializedValue = DynOS_Lvl_ReadU32LE(_Bytes);
+        LvlWordType _WordType = DynOS_Lvl_GetWordType(_CmdId, _CmdWordIndex);
+        u32 _Value = DynOS_Lvl_MakeWord(_Bytes, _WordType);
+        _CmdWordIndex++;
+#else
         u32 _Value = aFile->Read<u32>();
+        u32 _SerializedValue = _Value;
+#endif
 
         bool requirePointer = DynOS_Lvl_Validate_RequirePointer(_Value);
 
-        void *_Ptr = DynOS_Pointer_Load(aFile, aGfxData, _Value, FUNCTION_LVL, &_Node->mFlags);
+        void *_Ptr = DynOS_Pointer_Load(aFile, aGfxData, _SerializedValue, FUNCTION_LVL, &_Node->mFlags);
+#if defined(TARGET_WII_U) && defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Lvl_Load: word name=%s i=%u cmd=%02X/%u type=%u raw=%02X%02X%02X%02X serialized=%08X value=%08X requirePtr=%d ptr=%p offset=%d",
+                  _Node->mName.begin(), i, _CmdId, _CmdWordIndex - 1, (u32)_WordType,
+                  _Bytes[0], _Bytes[1], _Bytes[2], _Bytes[3],
+                  _SerializedValue, _Value, requirePointer ? 1 : 0, _Ptr, aFile->Offset());
+#elif defined(WIIU_VERBOSE_DYNOS_TRACE)
+        sys_trace("DynOS_Lvl_Load: word name=%s i=%u serialized=%08X value=%08X requirePtr=%d ptr=%p offset=%d",
+                  _Node->mName.begin(), i, _SerializedValue, _Value, requirePointer ? 1 : 0, _Ptr, aFile->Offset());
+#endif
         if (_Ptr) {
-            if (!requirePointer && _Value != LUA_VAR_CODE) {
-                PrintError("Didn't expect a pointer while reading level script: %s, %u", _Node->mName.begin(), _Value);
+            if (!requirePointer && _SerializedValue != LUA_VAR_CODE) {
+                PrintError("Didn't expect a pointer while reading level script: %s, %u", _Node->mName.begin(), _SerializedValue);
             }
             _Node->mData[i] = (uintptr_t) _Ptr;
         } else {
-            if (requirePointer && _Value != LUA_VAR_CODE) {
-                PrintError("Expected a pointer while reading level script: %s, %u", _Node->mName.begin(), _Value);
+            if (requirePointer && _SerializedValue != 0 && _SerializedValue != LUA_VAR_CODE) {
+                PrintError("Expected a pointer while reading level script: %s, %u", _Node->mName.begin(), _SerializedValue);
                 _Node->mData[i] = 0;
             } else {
                 _Node->mData[i] = (uintptr_t) _Value;
@@ -1085,6 +1274,7 @@ static DataNode<LevelScript>* DynOS_Lvl_Load(BinFile *aFile, GfxData *aGfxData) 
         }
     }
 
+    sys_trace("DynOS_Lvl_Load: end name=%s flags=%u offset=%d", _Node->mName.begin(), _Node->mFlags, aFile->Offset());
     return _Node;
 }
 
@@ -1094,11 +1284,17 @@ GfxData *DynOS_Lvl_LoadFromBinary(const SysPath &aFilename, const char *aLevelNa
 
     // Load data from binary file
     GfxData *_GfxData = NULL;
+    sys_trace("DynOS_Lvl_LoadFromBinary: begin file=%s level=%s", aFilename.c_str(), aLevelName ? aLevelName : "(null)");
     BinFile *_File = DynOS_Bin_Decompress(aFilename);
     if (_File) {
+        sys_trace("DynOS_Lvl_LoadFromBinary: decompressed file=%s size=%d", aFilename.c_str(), _File->Size());
         _GfxData = New<GfxData>();
         for (bool _Done = false; !_Done;) {
-            switch (_File->Read<u8>()) {
+            s32 _TypeOffset = _File->Offset();
+            u8 _Type = _File->Read<u8>();
+            sys_trace("DynOS_Lvl_LoadFromBinary: type begin file=%s offset=%d type=%u %s",
+                      aFilename.c_str(), _TypeOffset, _Type, DynOS_Lvl_DataTypeName(_Type));
+            switch (_Type) {
                 case DATA_TYPE_LIGHT:           DynOS_Lights_Load     (_File, _GfxData); break;
                 case DATA_TYPE_LIGHT_0:         DynOS_Light0_Load     (_File, _GfxData); break;
                 case DATA_TYPE_LIGHT_T:         DynOS_LightT_Load     (_File, _GfxData); break;
@@ -1120,10 +1316,14 @@ GfxData *DynOS_Lvl_LoadFromBinary(const SysPath &aFilename, const char *aLevelNa
                 case DATA_TYPE_ROOMS:           DynOS_Rooms_Load      (_File, _GfxData); break;
                 default:                        _Done = true;                            break;
             }
+            sys_trace("DynOS_Lvl_LoadFromBinary: type end file=%s offset=%d type=%u %s done=%d",
+                      aFilename.c_str(), _File->Offset(), _Type, DynOS_Lvl_DataTypeName(_Type), _Done ? 1 : 0);
         }
         BinFile::Close(_File);
     }
 
+    sys_trace("DynOS_Lvl_LoadFromBinary: end file=%s level=%s gfx=%p",
+              aFilename.c_str(), aLevelName ? aLevelName : "(null)", _GfxData);
     return _GfxData;
 }
 

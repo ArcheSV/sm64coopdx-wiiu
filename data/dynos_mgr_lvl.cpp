@@ -3,6 +3,7 @@
 extern "C" {
 #include "engine/level_script.h"
 #include "game/skybox.h"
+#include "pc/platform.h"
 }
 
 struct OverrideLevelScript {
@@ -53,20 +54,26 @@ void DynOS_Lvl_ModShutdown() {
 void DynOS_Lvl_Activate(s32 modIndex, const SysPath &aFilename, const char *aLevelName) {
     auto& _CustomLevelScripts = DynOS_Lvl_GetArray();
     auto& _OverrideLevelScripts = DynosOverrideLevelScripts();
+    sys_trace("DynOS_Lvl_Activate: begin file=%s level=%s mod=%d", aFilename.c_str(), aLevelName, modIndex);
 
     // make sure vanilla levels were parsed
+    sys_trace("DynOS_Lvl_Activate: level init begin");
     DynOS_Level_Init();
+    sys_trace("DynOS_Lvl_Activate: level init end");
 
     // check for duplicates
     for (auto &customLevel : _CustomLevelScripts) {
         if (customLevel.first == aLevelName) {
+            sys_trace("DynOS_Lvl_Activate: duplicate level=%s", aLevelName);
             return;
         }
     }
 
     std::string levelName = aLevelName;
 
+    sys_trace("DynOS_Lvl_Activate: load binary begin level=%s", aLevelName);
     GfxData* _Node = DynOS_Lvl_LoadFromBinary(aFilename, levelName.c_str());
+    sys_trace("DynOS_Lvl_Activate: load binary end level=%s gfx=%p", aLevelName, _Node);
     if (!_Node) {
         return;
     }
@@ -76,23 +83,35 @@ void DynOS_Lvl_Activate(s32 modIndex, const SysPath &aFilename, const char *aLev
 
     // Add to levels
     _CustomLevelScripts.emplace_back(levelName, _Node);
+    sys_trace("DynOS_Lvl_Activate: added level=%s scripts=%u geos=%u cols=%u textures=%u",
+              aLevelName, _Node->mLevelScripts.Count(), _Node->mGeoLayouts.Count(),
+              _Node->mCollisions.Count(), _Node->mTextures.Count());
     DynOS_Tex_Valid(_Node);
+    sys_trace("DynOS_Lvl_Activate: tex valid level=%s", aLevelName);
 
     // Override vanilla script
     auto& newScripts = _Node->mLevelScripts;
     if (newScripts.Count() <= 0) {
         PrintError("Could not find level scripts: '%s'", aLevelName);
+        sys_trace("DynOS_Lvl_Activate: no scripts level=%s", aLevelName);
         return;
     }
 
     auto& newScriptNode = newScripts[newScripts.Count() - 1];
+    sys_trace("DynOS_Lvl_Activate: script selected level=%s node=%s data=%p words=%u",
+              aLevelName, newScriptNode->mName.begin(), newScriptNode->mData, newScriptNode->mSize);
     const void* originalScript = DynOS_Builtin_ScriptPtr_GetFromName(newScriptNode->mName.begin());
     if (originalScript == NULL) {
+        sys_trace("DynOS_Lvl_Activate: no original script for %s", newScriptNode->mName.begin());
         return;
     }
 
+    sys_trace("DynOS_Lvl_Activate: override begin level=%s original=%p new=%p",
+              aLevelName, originalScript, newScriptNode->mData);
     DynOS_Level_Override((void*)originalScript, newScriptNode->mData, modIndex);
+    sys_trace("DynOS_Lvl_Activate: override end level=%s", aLevelName);
     _OverrideLevelScripts.push_back({ originalScript, newScriptNode->mData, _Node});
+    sys_trace("DynOS_Lvl_Activate: end level=%s", aLevelName);
 }
 
 GfxData* DynOS_Lvl_GetActiveGfx(void) {

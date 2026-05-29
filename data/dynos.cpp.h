@@ -4,6 +4,7 @@
 
 #include "dynos.h"
 #include <vector>
+#include <type_traits>
 
 extern "C" {
 #include "engine/behavior_script.h"
@@ -92,6 +93,22 @@ private:
         mSize = MAX(mSize, newSize);
     }
 
+    template <typename T>
+    static T ReadEndian(T aItem) {
+#if defined(TARGET_WII_U)
+        // DynOS binary data is generated little-endian by the PC toolchain.
+        if ((std::is_arithmetic<T>::value || std::is_enum<T>::value) && sizeof(T) > 1) {
+            u8 *bytes = (u8 *) &aItem;
+            for (size_t i = 0; i < sizeof(T) / 2; i++) {
+                u8 temp = bytes[i];
+                bytes[i] = bytes[sizeof(T) - 1 - i];
+                bytes[sizeof(T) - 1 - i] = temp;
+            }
+        }
+#endif
+        return aItem;
+    }
+
 public:
     inline s32 Size() const { return mSize; }
     inline s32 Offset() const { return mOffset; }
@@ -153,6 +170,7 @@ public:
         if (mOffset + sizeof(T) <= mSize) {
             memcpy(&_Item, mData + mOffset, sizeof(T));
             mOffset += sizeof(T);
+            _Item = ReadEndian(_Item);
         }
         return _Item;
     }
@@ -162,6 +180,14 @@ public:
         if (aCount <= 0 || aBuffer == NULL) {
             return aBuffer;
         }
+#if defined(TARGET_WII_U)
+        if ((std::is_arithmetic<T>::value || std::is_enum<T>::value) && sizeof(T) > 1 && mOffset + aCount * sizeof(T) <= mSize) {
+            for (s32 i = 0; i < aCount; i++) {
+                aBuffer[i] = Read<T>();
+            }
+            return aBuffer;
+        }
+#endif
         if (mOffset + aCount * sizeof(T) <= mSize) {
             memcpy(aBuffer, mData + mOffset, aCount * sizeof(T));
             mOffset += aCount * sizeof(T);
@@ -832,6 +858,7 @@ s16 *DynOS_Level_GetWarp(s32 aLevel, s32 aArea, s8 aWarpId);
 s16 *DynOS_Level_GetWarpEntry(s32 aLevel, s32 aArea);
 s16 *DynOS_Level_GetWarpDeath(s32 aLevel, s32 aArea);
 u64 DynOS_Level_CmdGet(void *aCmd, u64 aOffset);
+uintptr_t DynOS_Level_CmdGetPtr(void *aCmd, u64 aOffset);
 LvlCmd *DynOS_Level_CmdNext(LvlCmd *aCmd);
 void DynOS_Level_ParseScript(const void *aScript, s32 (*aPreprocessFunction)(u8, void *));
 

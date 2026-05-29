@@ -26,6 +26,9 @@ const char *sys_exe_path_file(void);
 const char *sys_file_extension(const char *fpath);
 const char *sys_file_name(const char *fpath);
 void sys_swap_backslashes(char* buffer);
+void sys_trace(const char *fmt, ...);
+void wiiu_diag_reset(void);
+void wiiu_diag_mark(const char *fmt, ...);
 
 // shows an error message in some way and terminates the game
 void sys_fatal(const char *fmt, ...) __attribute__ ((noreturn));

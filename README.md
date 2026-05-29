@@ -11,12 +11,31 @@ starting with an offline `.rpx` target before attempting any network features.
 This is also a personal learning project to get hands-on experience with C
 and homebrew development for consoles.
 
+Sorry for the messy and shitty code I made, oops.
+
 ## Current Status
+The Wii U build compiles and is playable in Cemu, but **Lua mod support is not yet stable**.
 
-This Wii U port is in an very early experimental stage.
+### Known issue
 
-The project now builds with the Wii U toolchain and can produce a testable RPX.
-In Cemu, the port is not playable yet, but it no longer crashes during this stage, and some textures (such as the ground, castle, and grass) now load correctly.
+The game crashes during Lua mod initialization, usually when loading or executing the first enabled script (`cheats.lua`). The flow correctly reaches the Lua startup phase, opens the mod file without errors, and then crashes around `lua_load()` / the first `pcall()` execution path.
+
+### Investigated and ruled out
+
+Several hypotheses have been tested without success:
+
+- Replaced `luaL_loadbufferx()` with streamed `lua_load()`.
+- Avoided the custom per-mod `_ENV` path on Wii U.
+- Changed bulk Lua constants binding to lazy binding.
+- Rebuilt the Wii U Lua 5.3.5 static library with `LUA_32BITS`.
+- Tested a dedicated Lua thread with a larger stack.
+- Tested a fixed-size Lua arena allocator to rule out obvious OOM issues.
+- Tried simplifying sync/global table setup.
+- Tried Lua line tracing, but discarded because the extra instrumentation shifts the crash point and yields unreliable results.
+
+### What cause the crash?
+
+The most likely hypothesis is an instability in the Wii U/Cemu Lua VM integration during mod script loading or first execution, possibly related to ABI, memory layout, compiler, or runtime behavior differences, so I don't think that is a specific line in the Lua script.
 
 ## Credits
 

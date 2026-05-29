@@ -20,6 +20,8 @@
 #include "pc/crash_handler.h"
 #include "pc/debuglog.h"
 #include "pc/pc_main.h"
+#include "pc/platform.h"
+#include "pc/thread.h"
 #include "pc/gfx/gfx_pc.h"
 #include "pc/fs/fmem.h"
 #include "game/hardcoded.h"
@@ -39,6 +41,50 @@
 
 #ifdef DISCORD_SDK
 #include "pc/discord/discord.h"
+#endif
+
+#if defined(TARGET_WII_U)
+#ifndef WIIU_LUA_INIT_STACK_SIZE
+#define WIIU_LUA_INIT_STACK_SIZE (32 * 1024 * 1024)
+#endif
+
+bool wiiu_run_lua_init_thread(void (*entry)(void), size_t stackSize);
+
+static void network_wiiu_smlua_init_thread(void) {
+    wiiu_diag_mark("network_wiiu_smlua_init_thread: begin");
+    smlua_init();
+    wiiu_diag_mark("network_wiiu_smlua_init_thread: end");
+}
+
+static void network_wiiu_smlua_init(void) {
+#if !defined(WIIU_LUA_USE_THREAD)
+    wiiu_diag_mark("network_wiiu_smlua_init: no-thread begin");
+    sys_trace("network_wiiu_smlua_init: no-thread begin");
+    smlua_init();
+    sys_trace("network_wiiu_smlua_init: no-thread end");
+    wiiu_diag_mark("network_wiiu_smlua_init: no-thread end");
+    return;
+#endif
+
+    size_t stackSize = WIIU_LUA_INIT_STACK_SIZE;
+
+    // Lua parsing needs a clean stack on Wii U when started from the host UI.
+    wiiu_diag_mark("network_wiiu_smlua_init: os thread begin stack=%u", (u32)stackSize);
+    sys_trace("network_wiiu_smlua_init: os thread begin stack=%u", (u32)stackSize);
+    if (wiiu_run_lua_init_thread(network_wiiu_smlua_init_thread, stackSize)) {
+        wiiu_diag_mark("network_wiiu_smlua_init: join begin");
+        wiiu_diag_mark("network_wiiu_smlua_init: join end");
+        sys_trace("network_wiiu_smlua_init: thread end");
+        wiiu_diag_mark("network_wiiu_smlua_init: thread end");
+        return;
+    }
+
+    wiiu_diag_mark("network_wiiu_smlua_init: thread failed, fallback begin");
+    sys_trace("network_wiiu_smlua_init: thread failed, fallback begin");
+    smlua_init();
+    sys_trace("network_wiiu_smlua_init: fallback end");
+    wiiu_diag_mark("network_wiiu_smlua_init: fallback end");
+}
 #endif
 
 // fix warnings when including rendering_graph_node
@@ -107,6 +153,17 @@ void network_set_system(enum NetworkSystemType nsType) {
 }
 
 bool network_init(enum NetworkType inNetworkType, bool reconnecting) {
+#if defined(TARGET_WII_U)
+    static bool sWiiUDiagReset = false;
+    if (!sWiiUDiagReset) {
+        wiiu_diag_reset();
+        wiiu_diag_mark("diag reset");
+        sWiiUDiagReset = true;
+    }
+#endif
+    wiiu_diag_mark("network_init: begin type=%d reconnecting=%d lua=%p", inNetworkType, reconnecting, (void*)gLuaState);
+    sys_trace("network_init: begin type=%d reconnecting=%d", inNetworkType, reconnecting);
+
     // reset override hide hud
     extern u8 gOverrideHideHud;
     gOverrideHideHud = 0;
@@ -144,7 +201,9 @@ bool network_init(enum NetworkType inNetworkType, bool reconnecting) {
 
     // initialize the network system
     gNetworkSentJoin = false;
+    sys_trace("network_init: initialize network system");
     int rc = gNetworkSystem->initialize(inNetworkType, reconnecting);
+    sys_trace("network_init: initialize rc=%d", rc);
     if (!rc && inNetworkType != NT_NONE) {
         LOG_ERROR("failed to initialize network system");
         djui_popup_create(DLANG(NOTIF, DISCONNECT_CLOSED), 2);
@@ -162,12 +221,47 @@ bool network_init(enum NetworkType inNetworkType, bool reconnecting) {
         extern s16 gCurrSaveFileNum;
         gCurrSaveFileNum = configHostSaveSlot;
 
+        wiiu_diag_mark("network_init: mods_activate begin");
+        sys_trace("network_init: mods_activate begin");
         mods_activate(&gLocalMods);
+        sys_trace("network_init: mods_activate end");
+        wiiu_diag_mark("network_init: mods_activate end");
+
+        wiiu_diag_mark("network_init: smlua_init begin");
+        sys_trace("network_init: smlua_init begin");
+#if defined(TARGET_WII_U)
+        if (reconnecting && gLuaState != NULL) {
+            wiiu_diag_mark("network_init: skip smlua_init on Wii U reconnecting existing lua=%p", (void*)gLuaState);
+            sys_trace("network_init: skip smlua_init on reconnecting existing lua=%p", gLuaState);
+        } else {
+            network_wiiu_smlua_init();
+        }
+#else
         smlua_init();
+#endif
+        sys_trace("network_init: smlua_init end");
+        wiiu_diag_mark("network_init: smlua_init end");
 
+#if defined(TARGET_WII_U) && defined(WIIU_LUA_STAGE) && (WIIU_LUA_STAGE != 999)
+        wiiu_diag_mark("network_init: WIIU_LUA_STAGE active; skip post-lua init");
+        return true;
+#endif
+
+        wiiu_diag_mark("network_init: dynos_behavior_hook_all_custom_behaviors begin");
+        sys_trace("network_init: dynos_behavior_hook_all_custom_behaviors begin");
+#if defined(TARGET_WII_U) && defined(WIIU_SKIP_DYNOS_BHV_HOOK)
+        wiiu_diag_mark("network_init: skipped dynos behavior hook");
+#else
         dynos_behavior_hook_all_custom_behaviors();
+#endif
+        sys_trace("network_init: dynos_behavior_hook_all_custom_behaviors end");
+        wiiu_diag_mark("network_init: dynos_behavior_hook_all_custom_behaviors end");
 
+        wiiu_diag_mark("network_init: network_player_connected begin");
+        sys_trace("network_init: network_player_connected begin");
         network_player_connected(NPT_LOCAL, 0, configPlayerModel, &configPlayerPalette, configPlayerName, get_local_discord_id());
+        sys_trace("network_init: network_player_connected end");
+        wiiu_diag_mark("network_init: network_player_connected end");
         extern u8* gOverrideEeprom;
         gOverrideEeprom = NULL;
 
@@ -179,7 +273,9 @@ bool network_init(enum NetworkType inNetworkType, bool reconnecting) {
         djui_chat_box_create();
     }
 
+    sys_trace("network_init: configfile_save begin");
     configfile_save(configfile_name());
+    sys_trace("network_init: configfile_save end");
 
 #ifdef DISCORD_SDK
     if (gDiscordInitialized) {
@@ -191,6 +287,7 @@ bool network_init(enum NetworkType inNetworkType, bool reconnecting) {
 
     LOG_INFO("initialized");
 
+    sys_trace("network_init: end");
     return true;
 }
 

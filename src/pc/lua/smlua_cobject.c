@@ -15,6 +15,8 @@
 #include "pc/lua/utils/smlua_collision_utils.h"
 #include "pc/lua/utils/smlua_obj_utils.h"
 #include "pc/mods/mods.h"
+#include "pc/platform.h"
+#include <string.h>
 
 extern struct LuaObjectTable sLuaObjectTable[LOT_MAX];
 
@@ -687,21 +689,204 @@ static int smlua_cpointer_get(lua_State* L) {
 }
 static int smlua_cpointer_set(UNUSED lua_State* L) { return 0; }
 
+#if defined(TARGET_WII_U)
+typedef struct {
+    u16 lot;
+    void *base;
+    size_t stride;
+    s32 count;
+} SmluaWiiULazyArrayInfo;
+
+static int smlua_wiiu_lazy_array_index(lua_State *L) {
+    SmluaWiiULazyArrayInfo *info = lua_touserdata(L, lua_upvalueindex(1));
+    if (info == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    int isNumber = 0;
+    lua_Integer index = lua_tointegerx(L, 2, &isNumber);
+    if (!isNumber || index < 0 || index >= info->count) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    void *ptr = (u8 *)info->base + (index * info->stride);
+    smlua_push_object(L, info->lot, ptr, NULL);
+    return 1;
+}
+
+static int smlua_wiiu_lazy_array_len(lua_State *L) {
+    SmluaWiiULazyArrayInfo *info = lua_touserdata(L, lua_upvalueindex(1));
+    lua_pushinteger(L, info ? info->count : 0);
+    return 1;
+}
+
+static void smlua_wiiu_expose_lazy_array(lua_State *L, const char *name, SmluaWiiULazyArrayInfo *info) {
+    wiiu_diag_mark("smlua_cobject_init_globals: expose lazy array %s begin count=%d top=%d", name, info->count, lua_gettop(L));
+    lua_newtable(L);
+    lua_newtable(L);
+
+    lua_pushstring(L, "__index");
+    lua_pushlightuserdata(L, info);
+    lua_pushcclosure(L, smlua_wiiu_lazy_array_index, 1);
+    lua_rawset(L, -3);
+
+    lua_pushstring(L, "__len");
+    lua_pushlightuserdata(L, info);
+    lua_pushcclosure(L, smlua_wiiu_lazy_array_len, 1);
+    lua_rawset(L, -3);
+
+    lua_setmetatable(L, -2);
+    lua_setglobal(L, name);
+    wiiu_diag_mark("smlua_cobject_init_globals: expose lazy array %s end top=%d", name, lua_gettop(L));
+}
+
+static SmluaWiiULazyArrayInfo sWiiULazyMarioStates = { LOT_MARIOSTATE, gMarioStates, sizeof(gMarioStates[0]), MAX_PLAYERS };
+static SmluaWiiULazyArrayInfo sWiiULazyNetworkPlayers = { LOT_NETWORKPLAYER, gNetworkPlayers, sizeof(gNetworkPlayers[0]), MAX_PLAYERS };
+static SmluaWiiULazyArrayInfo sWiiULazyCharacters = { LOT_CHARACTER, gCharacters, sizeof(gCharacters[0]), CT_MAX };
+static SmluaWiiULazyArrayInfo sWiiULazyControllers = { LOT_CONTROLLER, gControllers, sizeof(gControllers[0]), MAX_PLAYERS };
+static SmluaWiiULazyArrayInfo sWiiULazyMatStack = { LOT_MAT4, gMatStack, sizeof(gMatStack[0]), MATRIX_STACK_SIZE };
+static SmluaWiiULazyArrayInfo sWiiULazyMatStackPrev = { LOT_MAT4, gMatStackPrev, sizeof(gMatStackPrev[0]), MATRIX_STACK_SIZE };
+
+bool smlua_wiiu_bind_cobject_global_if_exists(lua_State *L, const char *name) {
+    if (name == NULL) { return false; }
+
+    if (strcmp(name, "gMarioStates") == 0) {
+        smlua_wiiu_expose_lazy_array(L, "gMarioStates", &sWiiULazyMarioStates);
+        return true;
+    }
+    if (strcmp(name, "gNetworkPlayers") == 0) {
+        smlua_wiiu_expose_lazy_array(L, "gNetworkPlayers", &sWiiULazyNetworkPlayers);
+        return true;
+    }
+    if (strcmp(name, "gCharacters") == 0) {
+        smlua_wiiu_expose_lazy_array(L, "gCharacters", &sWiiULazyCharacters);
+        return true;
+    }
+    if (strcmp(name, "gControllers") == 0) {
+        smlua_wiiu_expose_lazy_array(L, "gControllers", &sWiiULazyControllers);
+        return true;
+    }
+    if (strcmp(name, "gMatStack") == 0) {
+        smlua_wiiu_expose_lazy_array(L, "gMatStack", &sWiiULazyMatStack);
+        return true;
+    }
+    if (strcmp(name, "gMatStackPrev") == 0) {
+        smlua_wiiu_expose_lazy_array(L, "gMatStackPrev", &sWiiULazyMatStackPrev);
+        return true;
+    }
+
+    if (strcmp(name, "gTextures") == 0) {
+        smlua_push_object(L, LOT_GLOBALTEXTURES, &gGlobalTextures, NULL);
+        lua_setglobal(L, "gTextures");
+        return true;
+    }
+    if (strcmp(name, "gObjectAnimations") == 0) {
+        smlua_push_object(L, LOT_GLOBALOBJECTANIMATIONS, &gGlobalObjectAnimations, NULL);
+        lua_setglobal(L, "gObjectAnimations");
+        return true;
+    }
+    if (strcmp(name, "gPaintingValues") == 0) {
+        smlua_push_object(L, LOT_PAINTINGVALUES, &gPaintingValues, NULL);
+        lua_setglobal(L, "gPaintingValues");
+        return true;
+    }
+    if (strcmp(name, "gGlobalObjectCollisionData") == 0) {
+        smlua_push_object(L, LOT_GLOBALOBJECTCOLLISIONDATA, &gGlobalObjectCollisionData, NULL);
+        lua_setglobal(L, "gGlobalObjectCollisionData");
+        return true;
+    }
+    if (strcmp(name, "gLevelValues") == 0) {
+        smlua_push_object(L, LOT_LEVELVALUES, &gLevelValues, NULL);
+        lua_setglobal(L, "gLevelValues");
+        return true;
+    }
+    if (strcmp(name, "gBehaviorValues") == 0) {
+        smlua_push_object(L, LOT_BEHAVIORVALUES, &gBehaviorValues, NULL);
+        lua_setglobal(L, "gBehaviorValues");
+        return true;
+    }
+    if (strcmp(name, "gFirstPersonCamera") == 0) {
+        smlua_push_object(L, LOT_FIRSTPERSONCAMERA, &gFirstPersonCamera, NULL);
+        lua_setglobal(L, "gFirstPersonCamera");
+        return true;
+    }
+    if (strcmp(name, "gLakituState") == 0) {
+        smlua_push_object(L, LOT_LAKITUSTATE, &gLakituState, NULL);
+        lua_setglobal(L, "gLakituState");
+        return true;
+    }
+    if (strcmp(name, "gServerSettings") == 0) {
+        smlua_push_object(L, LOT_SERVERSETTINGS, &gServerSettings, NULL);
+        lua_setglobal(L, "gServerSettings");
+        return true;
+    }
+    if (strcmp(name, "gNametagsSettings") == 0) {
+        smlua_push_object(L, LOT_NAMETAGSSETTINGS, &gNametagsSettings, NULL);
+        lua_setglobal(L, "gNametagsSettings");
+        return true;
+    }
+
+    return false;
+}
+
+static void smlua_wiiu_set_metafunction(lua_State *L, const char *tableName, const char *fieldName, lua_CFunction fn) {
+    (void)tableName;
+    int table = lua_gettop(L);
+    lua_pushstring(L, fieldName);
+    lua_pushcfunction(L, fn);
+    lua_rawset(L, table);
+}
+
+static void smlua_wiiu_lock_metatable(lua_State *L, const char *tableName) {
+    (void)tableName;
+    int table = lua_gettop(L);
+    lua_pushstring(L, "__metatable");
+    lua_pushboolean(L, false);
+    lua_rawset(L, table);
+}
+#endif
+
   //////////
  // bind //
 //////////
 
-void smlua_cobject_init_globals(void) {
+void smlua_cobject_init_refs(void) {
     lua_State* L = gLuaState;
 
+#if defined(TARGET_WII_U)
+    if (gSmLuaCObjects != 0 && gSmLuaCPointers != 0 && gSmLuaCObjectMetatable != 0 && gSmLuaCPointerMetatable != 0) {
+        wiiu_diag_mark("smlua_cobject_init_globals: refs already initialized");
+        return;
+    }
+#endif
+
     // Create object pools
+    wiiu_diag_mark("smlua_cobject_init_globals: cobjects table begin top=%d", lua_gettop(L));
     lua_newtable(L);
+    wiiu_diag_mark("smlua_cobject_init_globals: cobjects ref begin top=%d", lua_gettop(L));
     gSmLuaCObjects = luaL_ref(L, LUA_REGISTRYINDEX);
+    wiiu_diag_mark("smlua_cobject_init_globals: cpointers table begin top=%d", lua_gettop(L));
     lua_newtable(L);
+    wiiu_diag_mark("smlua_cobject_init_globals: cpointers ref begin top=%d", lua_gettop(L));
     gSmLuaCPointers = luaL_ref(L, LUA_REGISTRYINDEX);
 
     // Create metatables
+    wiiu_diag_mark("smlua_cobject_init_globals: CObject metatable begin top=%d", lua_gettop(L));
+#if defined(TARGET_WII_U)
+    lua_newtable(L);
+#else
     luaL_newmetatable(L, "CObject");
+#endif
+    wiiu_diag_mark("smlua_cobject_init_globals: CObject setfuncs begin top=%d", lua_gettop(L));
+#if defined(TARGET_WII_U)
+    smlua_wiiu_set_metafunction(L, "CObject", "__index", smlua__get_field);
+    smlua_wiiu_set_metafunction(L, "CObject", "__newindex", smlua__set_field);
+    smlua_wiiu_set_metafunction(L, "CObject", "__eq", smlua__eq);
+    smlua_wiiu_set_metafunction(L, "CObject", "__bnot", smlua__bnot);
+    smlua_wiiu_lock_metatable(L, "CObject");
+#else
     luaL_Reg cObjectMethods[] = {
         { "__index",    smlua__get_field },
         { "__newindex", smlua__set_field },
@@ -711,8 +896,23 @@ void smlua_cobject_init_globals(void) {
         { NULL, NULL }
     };
     luaL_setfuncs(L, cObjectMethods, 0);
+#endif
+    wiiu_diag_mark("smlua_cobject_init_globals: CObject ref begin top=%d", lua_gettop(L));
     gSmLuaCObjectMetatable = luaL_ref(L, LUA_REGISTRYINDEX);
+    wiiu_diag_mark("smlua_cobject_init_globals: CPointer metatable begin top=%d", lua_gettop(L));
+#if defined(TARGET_WII_U)
+    lua_newtable(L);
+#else
     luaL_newmetatable(L, "CPointer");
+#endif
+    wiiu_diag_mark("smlua_cobject_init_globals: CPointer setfuncs begin top=%d", lua_gettop(L));
+#if defined(TARGET_WII_U)
+    smlua_wiiu_set_metafunction(L, "CPointer", "__index", smlua_cpointer_get);
+    smlua_wiiu_set_metafunction(L, "CPointer", "__newindex", smlua_cpointer_set);
+    smlua_wiiu_set_metafunction(L, "CPointer", "__eq", smlua__eq);
+    smlua_wiiu_set_metafunction(L, "CPointer", "__bnot", smlua__bnot);
+    smlua_wiiu_lock_metatable(L, "CPointer");
+#else
     luaL_Reg cPointerMethods[] = {
         { "__index",    smlua_cpointer_get },
         { "__newindex", smlua_cpointer_set },
@@ -722,8 +922,28 @@ void smlua_cobject_init_globals(void) {
         { NULL, NULL }
     };
     luaL_setfuncs(L, cPointerMethods, 0);
+#endif
+    wiiu_diag_mark("smlua_cobject_init_globals: CPointer ref begin top=%d", lua_gettop(L));
     gSmLuaCPointerMetatable = luaL_ref(L, LUA_REGISTRYINDEX);
+}
 
+void smlua_cobject_init_globals(void) {
+    lua_State* L = gLuaState;
+
+    smlua_cobject_init_refs();
+#if defined(TARGET_WII_U)
+    wiiu_diag_mark("smlua_cobject_init_globals: deferred on Wii U");
+    return;
+#endif
+    wiiu_diag_mark("smlua_cobject_init_globals: expose globals begin top=%d", lua_gettop(L));
+
+#if defined(TARGET_WII_U)
+#define EXPOSE_GLOBAL_ARRAY(lot, ptr, iterator) \
+    { \
+        static SmluaWiiULazyArrayInfo sLazyInfo_##ptr = { lot, ptr, sizeof(ptr[0]), iterator }; \
+        smlua_wiiu_expose_lazy_array(L, #ptr, &sLazyInfo_##ptr); \
+    }
+#else
 #define EXPOSE_GLOBAL_ARRAY(lot, ptr, iterator) \
     { \
         lua_newtable(L); \
@@ -734,7 +954,8 @@ void smlua_cobject_init_globals(void) {
             lua_settable(L, t); \
         } \
         lua_setglobal(L, #ptr); \
-    } \
+    }
+#endif
 
 #define EXPOSE_GLOBAL(lot, ptr) smlua_push_object(L, lot, &ptr, NULL); lua_setglobal(L, #ptr);
 #define EXPOSE_GLOBAL_PTR(lot, ptr) smlua_push_object(L, lot, ptr, NULL); lua_setglobal(L, #ptr);
@@ -747,6 +968,7 @@ void smlua_cobject_init_globals(void) {
     EXPOSE_GLOBAL_ARRAY(LOT_NETWORKPLAYER, gNetworkPlayers, MAX_PLAYERS);
 
     {
+        wiiu_diag_mark("smlua_cobject_init_globals: gActiveMods table begin count=%d", gActiveMods.entryCount);
         lua_newtable(L);
         int t = lua_gettop(gLuaState);
         for (s32 i = 0; i < gActiveMods.entryCount; i++) {
@@ -755,6 +977,7 @@ void smlua_cobject_init_globals(void) {
             lua_settable(L, t);
         }
         lua_setglobal(L, "gActiveMods");
+        wiiu_diag_mark("smlua_cobject_init_globals: gActiveMods table end top=%d", lua_gettop(L));
     }
 
     EXPOSE_GLOBAL_ARRAY(LOT_CHARACTER, gCharacters, CT_MAX);
@@ -786,20 +1009,36 @@ void smlua_cobject_init_globals(void) {
     EXPOSE_GLOBAL(LOT_SERVERSETTINGS, gServerSettings);
 
     EXPOSE_GLOBAL(LOT_NAMETAGSSETTINGS, gNametagsSettings);
+    wiiu_diag_mark("smlua_cobject_init_globals: end top=%d", lua_gettop(L));
+}
+
+static void smlua_cobject_init_per_file_globals_at_index(int fileGlobalIndex) {
+    lua_State* L = gLuaState;
+
+    {
+        lua_pushstring(L, "_custom_object_fields");
+        lua_newtable(L);
+        lua_settable(L, fileGlobalIndex);
+    }
 }
 
 void smlua_cobject_init_per_file_globals(const char* path) {
     lua_State* L = gLuaState;
 
     lua_getfield(L, LUA_REGISTRYINDEX, path); // push per-file globals
-
-    {
-        lua_pushstring(L, "_custom_object_fields");
-        lua_newtable(L);
-        lua_settable(L, -3);
-    }
+    int fileGlobalIndex = lua_gettop(L);
+    smlua_cobject_init_per_file_globals_at_index(fileGlobalIndex);
 
     lua_pop(L, 1); // pop per-file globals
+}
+
+void smlua_cobject_init_global_globals(void) {
+    lua_State* L = gLuaState;
+
+    lua_pushglobaltable(L);
+    int fileGlobalIndex = lua_gettop(L);
+    smlua_cobject_init_per_file_globals_at_index(fileGlobalIndex);
+    lua_pop(L, 1); // pop global table
 }
 
 void smlua_bind_cobject(void) {

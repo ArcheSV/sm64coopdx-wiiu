@@ -4,6 +4,7 @@ extern "C" {
 #include "engine/behavior_script.h"
 #include "pc/network/packets/packet.h"
 #include "pc/lua/smlua_hooks.h"
+#include "pc/platform.h"
 }
 
 std::vector<std::pair<std::string, GfxData *>> &DynOS_Bhv_GetArray() {
@@ -90,9 +91,13 @@ const char *DynOS_Bhv_GetToken(BehaviorScript *bhvScript, u32 index) {
 void DynOS_Bhv_HookAllCustomBehaviors() {
     auto &_CustomBehaviorScripts = DynOS_Bhv_GetArray();
 
+    wiiu_diag_mark("dynos bhv hook: begin count=%u", (u32)_CustomBehaviorScripts.size());
+    int index = 0;
     for (auto &behavior : _CustomBehaviorScripts) {
         auto &scriptName = behavior.first;
         auto &aGfxData = behavior.second;
+        wiiu_diag_mark("dynos bhv hook: %d %s", index, scriptName.c_str());
+        index++;
         if (aGfxData->mBehaviorScripts.Count() == 0) { continue; }
         auto *node = aGfxData->mBehaviorScripts[aGfxData->mBehaviorScripts.Count() - 1];
         if (node == nullptr) { continue; }
@@ -103,4 +108,5 @@ void DynOS_Bhv_HookAllCustomBehaviors() {
             PrintDataError("  ERROR: Failed to add custom behavior '%s'!", scriptName.c_str());
         }
     }
+    wiiu_diag_mark("dynos bhv hook: end");
 }

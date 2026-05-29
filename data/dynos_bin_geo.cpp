@@ -523,6 +523,40 @@ void DynOS_Geo_Write(BinFile *aFile, GfxData *aGfxData, DataNode<GeoLayout> *aNo
  // Reading //
 /////////////
 
+enum GeoLayoutWordKind {
+    GEO_LAYOUT_WORD_COMMAND,
+    GEO_LAYOUT_WORD_HALVES,
+    GEO_LAYOUT_WORD_WORD,
+    GEO_LAYOUT_WORD_POINTER,
+};
+
+static GeoLayout DynOS_Geo_ConvertLayoutWord(u32 aValue, GeoLayoutWordKind aKind) {
+#if defined(TARGET_WII_U)
+    // GeoLayout bytecode stores opcodes in byte 0, so packed command words need field-aware endian conversion.
+    switch (aKind) {
+        case GEO_LAYOUT_WORD_COMMAND:
+            return ((aValue & 0x000000FF) << 24) |
+                   ((aValue & 0x0000FF00) << 8)  |
+                   ((aValue & 0xFFFF0000) >> 16);
+        case GEO_LAYOUT_WORD_HALVES:
+            return ((aValue & 0x0000FFFF) << 16) |
+                   ((aValue & 0xFFFF0000) >> 16);
+        case GEO_LAYOUT_WORD_WORD:
+        case GEO_LAYOUT_WORD_POINTER:
+            return aValue;
+    }
+#else
+    (void)aKind;
+#endif
+    return aValue;
+}
+
+static GeoLayout DynOS_Geo_ReadLayoutWord(BinFile *aFile, GfxData *aGfxData, GeoLayoutWordKind aKind, u8 *outFlags) {
+    u32 _Value = aFile->Read<u32>();
+    void *_Ptr = DynOS_Pointer_Load(aFile, aGfxData, _Value, FUNCTION_GEO, outFlags);
+    return _Ptr ? (uintptr_t) _Ptr : DynOS_Geo_ConvertLayoutWord(_Value, aKind);
+}
+
 void DynOS_Geo_Load(BinFile *aFile, GfxData *aGfxData) {
     DataNode<GeoLayout> *_Node = New<DataNode<GeoLayout>>();
 
@@ -532,14 +566,91 @@ void DynOS_Geo_Load(BinFile *aFile, GfxData *aGfxData) {
     // Data
     _Node->mSize = aFile->Read<u32>();
     _Node->mData = New<GeoLayout>(_Node->mSize);
-    for (u32 i = 0; i != _Node->mSize; ++i) {
+    for (u32 i = 0; i < _Node->mSize;) {
         u32 _Value = aFile->Read<u32>();
-        void *_Ptr = DynOS_Pointer_Load(aFile, aGfxData, _Value, FUNCTION_GEO, &_Node->mFlags);
-        if (_Ptr) {
-            _Node->mData[i] = (uintptr_t) _Ptr;
-        } else {
-            _Node->mData[i] = (uintptr_t) _Value;
+        u8 _Command = _Value & 0xFF;
+        u8 _Params = (_Value >> 8) & 0xFF;
+        _Node->mData[i++] = DynOS_Geo_ConvertLayoutWord(_Value, GEO_LAYOUT_WORD_COMMAND);
+
+        #define READ_GEO_WORD(kind) do { \
+            if (i < _Node->mSize) { \
+                _Node->mData[i++] = DynOS_Geo_ReadLayoutWord(aFile, aGfxData, kind, &_Node->mFlags); \
+            } \
+        } while (0)
+
+        switch (_Command) {
+            case 0x00: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x01: break;
+            case 0x02: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x03: break;
+            case 0x04: break;
+            case 0x05: break;
+            case 0x06: break;
+            case 0x07: break;
+            case 0x08: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+            case 0x09: break;
+            case 0x0A: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); if (_Params) { READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); } break;
+            case 0x0B: break;
+            case 0x0C: break;
+            case 0x0D: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+            case 0x0E: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x0F: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x10:
+                switch ((_Params & 0x70) >> 4) {
+                    case 0: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+                    case 1: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+                    case 2: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+                    case 3: break;
+                }
+                if (_Params & 0x80) { READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); }
+                break;
+            case 0x11: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); if (_Params & 0x80) { READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); } break;
+            case 0x12: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); if (_Params & 0x80) { READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); } break;
+            case 0x13: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x14: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); if (_Params & 0x80) { READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); } break;
+            case 0x15: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x16: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+            case 0x17: break;
+            case 0x18: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x19: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x1A: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+            case 0x1B: break;
+            case 0x1C: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x1D:
+                if (_Params & 0x40) {
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                } else {
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                }
+                if (_Params & 0x80) { READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); }
+                break;
+            case 0x1E: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+            case 0x1F: READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES); break;
+            case 0x20: break;
+            case 0x21: READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER); break;
+            case 0x22: READ_GEO_WORD(GEO_LAYOUT_WORD_WORD); break;
+            case 0x23: READ_GEO_WORD(GEO_LAYOUT_WORD_WORD); break;
+            case 0x24:
+                READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES);
+                READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES);
+                READ_GEO_WORD(GEO_LAYOUT_WORD_HALVES);
+                if (_Params & 0x80) {
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                }
+                READ_GEO_WORD(GEO_LAYOUT_WORD_POINTER);
+                break;
+            default:
+                while (i < _Node->mSize) {
+                    READ_GEO_WORD(GEO_LAYOUT_WORD_WORD);
+                }
+                break;
         }
+
+        #undef READ_GEO_WORD
     }
 
     // Append
