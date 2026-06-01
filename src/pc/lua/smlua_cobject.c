@@ -767,7 +767,7 @@ bool smlua_wiiu_bind_cobject_global_if_exists(lua_State *L, const char *name) {
     if (name == NULL) { return false; }
 
     if (strcmp(name, "gMarioStates") == 0) {
-        smlua_wiiu_expose_eager_array(L, "gMarioStates", &sWiiULazyMarioStates);
+        smlua_wiiu_expose_lazy_array(L, "gMarioStates", &sWiiULazyMarioStates);
         return true;
     }
     if (strcmp(name, "gNetworkPlayers") == 0) {

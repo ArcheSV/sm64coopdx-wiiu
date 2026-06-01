@@ -1210,7 +1210,11 @@ static bool smlua_check_binary_header(struct ModFile *file) {
 
 #if defined(TARGET_WII_U)
 #define SMLUA_WIIU_SCRIPT_BUFFER_SIZE (256 * 1024)
-static char sSmluaWiiuScriptBuffer[SMLUA_WIIU_SCRIPT_BUFFER_SIZE] __attribute__((aligned(64)));
+static struct {
+    char pad[128];
+    char buffer[SMLUA_WIIU_SCRIPT_BUFFER_SIZE];
+} sSmluaWiiuScriptStorage __attribute__((aligned(64)));
+#define sSmluaWiiuScriptBuffer (sSmluaWiiuScriptStorage.buffer)
 
 struct SmluaWiiuScriptReader {
     const char* buffer;
