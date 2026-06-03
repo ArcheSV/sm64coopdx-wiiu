@@ -1,15 +1,2 @@
-CREDIT_SUPPORTERS = {
-    "Saul",
-    "Ellie",
-    "Lyrae",
-    "Sophia",
-    "maemae",
-    "charity",
-    "FunkyLion",
-    "VioletArts",
-    "Nope208",
-    "Jack Black",
-    "GRAND DAD",
-    "Key's Artworks",
-    "Kale!",
-}
+CSSupporters=CSSupporters or {}
+function cs_supporter_add(name)CSSupporters[#CSSupporters+1]=name return #CSSupporters end
