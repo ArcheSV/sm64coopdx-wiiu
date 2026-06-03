@@ -6,7 +6,10 @@ This fork is an experimental Wii U porting effort for [Super Mario 64 Coop DX](h
 
 ### Mods and hackroms
 
-The game is fully playable on Wii U/Cemu, but Lua mods must be adapted for the Wii U version. The main limitation found so far is that large Lua files can crash during loading; in practice, mods should stay well below ~700 bytes per Lua file when possible, unless they have been tested specifically. Mods that use CObjects, engine structs, large scripts, or object-based hooks need Wii U-specific rewrites.
+The game is fully playable on Wii U/Cemu, but Lua mods must be adapted for the Wii U version. 
+The main limitation found so far is that large Lua files can crash during loading, in practice, 
+mods should stay well below ~700 bytes per Lua file when possible. Mods that use CObjects, 
+engine structs, large scripts, or object-based hooks need Wii U-specific rewrites.
 
 ### Still to do
 
