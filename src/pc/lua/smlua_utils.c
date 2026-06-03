@@ -674,6 +674,17 @@ s64 smlua_get_integer_mod_variable(u16 modIndex, const char* variable) {
     s64 value = smlua_get_integer_field(-1, (char*)variable);
     lua_settop(L, prevTop);
 
+#if defined(TARGET_WII_U)
+    if (!gSmLuaConvertSuccess) {
+        prevTop = lua_gettop(L);
+        lua_getglobal(L, "_G");
+        gSmLuaSuppressErrors = true;
+        gSmLuaConvertSuccess = true;
+        value = smlua_get_integer_field(-1, variable);
+        lua_settop(L, prevTop);
+    }
+#endif
+
     // return variable
     gSmLuaSuppressErrors = prevSuppress;
     return value;
@@ -700,6 +711,19 @@ s64 smlua_get_any_integer_mod_variable(const char* variable) {
             return value;
         }
     }
+
+#if defined(TARGET_WII_U)
+    int prevTop = lua_gettop(L);
+    lua_getglobal(L, "_G");
+    gSmLuaSuppressErrors = true;
+    gSmLuaConvertSuccess = true;
+    value = smlua_get_integer_field(-1, variable);
+    lua_settop(L, prevTop);
+    if (gSmLuaConvertSuccess) {
+        gSmLuaSuppressErrors = prevSuppress;
+        return value;
+    }
+#endif
 
     // return variable
     gSmLuaSuppressErrors = prevSuppress;
@@ -730,6 +754,17 @@ LuaFunction smlua_get_function_mod_variable(u16 modIndex, const char *variable) 
     LuaFunction value = smlua_get_function_field(-1, (char *)variable);
     lua_settop(L, prevTop);
 
+#if defined(TARGET_WII_U)
+    if (!gSmLuaConvertSuccess) {
+        prevTop = lua_gettop(L);
+        lua_getglobal(L, "_G");
+        gSmLuaSuppressErrors = true;
+        gSmLuaConvertSuccess = true;
+        value = smlua_get_function_field(-1, variable);
+        lua_settop(L, prevTop);
+    }
+#endif
+
     // return variable
     gSmLuaSuppressErrors = prevSuppress;
     return value;
@@ -756,6 +791,19 @@ LuaFunction smlua_get_any_function_mod_variable(const char *variable) {
             return value;
         }
     }
+
+#if defined(TARGET_WII_U)
+    int prevTop = lua_gettop(L);
+    lua_getglobal(L, "_G");
+    gSmLuaSuppressErrors = true;
+    gSmLuaConvertSuccess = true;
+    value = smlua_get_function_field(-1, variable);
+    lua_settop(L, prevTop);
+    if (gSmLuaConvertSuccess) {
+        gSmLuaSuppressErrors = prevSuppress;
+        return value;
+    }
+#endif
 
     // return variable
     gSmLuaSuppressErrors = prevSuppress;
